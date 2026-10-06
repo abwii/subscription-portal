@@ -1,0 +1,9 @@
+{
+  "extends": "@monrepo/config/tsconfig/next.json",
+  "compilerOptions": {
+    "types": ["node", "vitest/globals", "@testing-library/jest-dom"],
+    "paths": { "@/*": ["./*"] }
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", "**/*.mjs", ".next/types/**/*.ts"],
+  "exclude": ["node_modules"]
+}

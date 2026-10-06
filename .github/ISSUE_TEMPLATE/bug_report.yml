@@ -1,0 +1,50 @@
+name: Bug
+description: Signaler un comportement incorrect
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ne collez **jamais** de secret (token, mot de passe, `DATABASE_URL`) dans cette issue.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Zone concernée
+      options: [web, api, ui, config, ci-cd, docker, docs]
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Où le bug apparaît-il ?
+      options: [local, docker compose, staging, production]
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Comportement attendu
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Comportement constaté
+      description: Message d'erreur, statut HTTP, extrait de logs (sans secret).
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Pour reproduire
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version ou commit
+      description: Tag `vX.Y.Z` ou SHA court.

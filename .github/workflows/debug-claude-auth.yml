@@ -1,0 +1,45 @@
+# TEMPORAIRE : diagnostic de l'authentification Claude. À supprimer avec sa branche après usage.
+# Ne s'exécute que sur un push vers debug/claude-auth ; n'affiche jamais la valeur du secret.
+name: Debug Claude auth (temporaire)
+
+on:
+  push:
+    branches: [debug/claude-auth]
+
+permissions: {}
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      # Forme du secret uniquement : longueur, famille de jeton, espaces parasites.
+      - name: Inspect the secret shape
+        env:
+          T: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          echo "length=${#T}"
+          case "$T" in
+            sk-ant-oat*) echo "kind=oauth-token (attendu)" ;;
+            sk-ant-api*) echo "kind=CLE API (mauvais secret : il faut le jeton de 'claude setup-token')" ;;
+            "")          echo "kind=VIDE" ;;
+            *)           echo "kind=autre (format inattendu)" ;;
+          esac
+          [[ "$T" =~ [[:space:]] ]] && echo "whitespace=OUI (espace ou saut de ligne parasite)" || echo "whitespace=non"
+
+      # Un seul appel minimal : le message d'erreur éventuel s'affiche ici (tronqué à 800 caractères).
+      - name: Call Claude Code once
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          npm install -g @anthropic-ai/claude-code >/dev/null 2>&1
+          claude --version
+          set +e
+          out=$(claude -p "dis bonjour en un mot" --max-turns 1 2>&1)
+          code=$?
+          echo "exit=$code"
+          echo "$out" | head -c 800

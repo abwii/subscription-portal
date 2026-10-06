@@ -1,0 +1,84 @@
+name: Fly deploy
+description: >
+  Déploie une image déjà construite (GHCR) sur Fly.io (api puis web), puis smoke test.
+  Action composite : elle s'exécute dans le job appelant, qui déclare `environment:`
+  et fournit donc les secrets et variables de cet environnement.
+
+inputs:
+  tag:
+    description: "Tag d'image à déployer (vX.Y.Z ou sha-xxxxxxx)"
+    required: true
+  fly-token-api:
+    description: Deploy token Fly de l'app api (limité à cette app)
+    required: true
+  fly-token-web:
+    description: Deploy token Fly de l'app web (limité à cette app)
+    required: true
+  app-api:
+    description: Nom de l'app Fly api
+    required: true
+  app-web:
+    description: Nom de l'app Fly web
+    required: true
+  api-url:
+    description: URL publique de l'api (smoke test)
+    required: true
+  web-url:
+    description: URL publique du web (smoke test)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Validate inputs
+      shell: bash
+      env:
+        TAG: ${{ inputs.tag }}
+        TOKEN_API: ${{ inputs.fly-token-api }}
+        TOKEN_WEB: ${{ inputs.fly-token-web }}
+        APP_API: ${{ inputs.app-api }}
+        APP_WEB: ${{ inputs.app-web }}
+        API_URL: ${{ inputs.api-url }}
+        WEB_URL: ${{ inputs.web-url }}
+      run: |
+        [[ "$TAG" =~ ^(v[0-9]+\.[0-9]+\.[0-9]+|sha-[0-9a-f]{7})$ ]] \
+          || { echo "::error::Tag invalide: $TAG (attendu vX.Y.Z ou sha-xxxxxxx)"; exit 1; }
+        for v in TOKEN_API TOKEN_WEB APP_API APP_WEB API_URL WEB_URL; do
+          [[ -n "${!v}" ]] || { echo "::error::$v manquant : vérifiez les secrets et variables de l'environnement GitHub"; exit 1; }
+        done
+
+    - uses: superfly/flyctl-actions/setup-flyctl@1.6
+
+    # Même tag pour les deux apps : api et web partent ensemble.
+    # Un deploy token Fly est limité à une app : chaque étape ne voit que le sien.
+    - name: Deploy api
+      shell: bash
+      env:
+        FLY_API_TOKEN: ${{ inputs.fly-token-api }}
+        APP: ${{ inputs.app-api }}
+        TAG: ${{ inputs.tag }}
+      run: |
+        flyctl deploy --config apps/api/fly.toml --app "$APP" \
+          --image "ghcr.io/${GITHUB_REPOSITORY,,}-api:$TAG"
+
+    - name: Deploy web
+      shell: bash
+      env:
+        FLY_API_TOKEN: ${{ inputs.fly-token-web }}
+        APP: ${{ inputs.app-web }}
+        TAG: ${{ inputs.tag }}
+      run: |
+        flyctl deploy --config apps/web/fly.toml --app "$APP" \
+          --image "ghcr.io/${GITHUB_REPOSITORY,,}-web:$TAG"
+
+    # Machines potentiellement arrêtées (scale-to-zero) : on laisse le temps de démarrer.
+    - name: Smoke test
+      shell: bash
+      env:
+        API_URL: ${{ inputs.api-url }}
+        WEB_URL: ${{ inputs.web-url }}
+      run: |
+        for url in "$API_URL/health" "$API_URL/ready" "$WEB_URL/health"; do
+          curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors "$url"
+          echo
+        done

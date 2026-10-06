@@ -1,0 +1,74 @@
+# @claude dans une issue, une PR ou une revue : analyse, propose, ouvre une branche.
+# Prérequis (une fois) : app GitHub « Claude » installée sur le dépôt + secret CLAUDE_CODE_OAUTH_TOKEN
+# (jeton de l'abonnement Claude, généré avec `claude setup-token` : pas de facturation API séparée).
+# Dépôt public : le workflow ne démarre que pour le propriétaire, un membre ou un collaborateur.
+name: Claude
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+  issues:
+    types: [opened]
+
+# Droits par défaut nuls ; le job ne reçoit que ce qu'il lui faut.
+permissions: {}
+
+concurrency:
+  group: claude-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  claude:
+    if: >-
+      (github.event_name == 'issue_comment'
+        && contains(github.event.comment.body, '@claude')
+        && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
+      || (github.event_name == 'pull_request_review_comment'
+        && contains(github.event.comment.body, '@claude')
+        && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
+      || (github.event_name == 'pull_request_review'
+        && contains(github.event.review.body, '@claude')
+        && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.review.author_association))
+      || (github.event_name == 'issues'
+        && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude'))
+        && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write # pousser une branche (jamais main : protégée par ruleset)
+      pull-requests: write # commenter les PR
+      issues: write # commenter les issues
+      id-token: write # jeton OIDC court, échangé contre un jeton de l'app Claude (aucun accès au dépôt)
+    steps:
+      - name: Check CLAUDE_CODE_OAUTH_TOKEN
+        env:
+          KEY: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          [[ -n "$KEY" ]] || { echo "::error::Secret CLAUDE_CODE_OAUTH_TOKEN manquant (voir docs/USAGE.md §6)"; exit 1; }
+          [[ ! "$KEY" =~ [[:space:]] ]] || { echo "::error::CLAUDE_CODE_OAUTH_TOKEN contient un espace ou un saut de ligne (copie depuis un terminal qui a coupé la ligne ?). Recréez le secret sur une seule ligne."; exit 1; }
+          [[ "$KEY" == sk-ant-oat* ]] || { echo "::error::CLAUDE_CODE_OAUTH_TOKEN ne ressemble pas à un jeton de 'claude setup-token' (il doit commencer par sk-ant-oat). Copie incomplète ou mauvaise valeur ?"; exit 1; }
+
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      # pnpm et Node pour que Claude puisse lancer les tests ; pas d'installation ici :
+      # il la fait lui-même une fois sur la bonne branche.
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Borne le coût et la surface : peu de tours, et seulement les commandes de vérification
+          # (pas de `pnpm exec`, pas de `curl`, pas de shell libre).
+          claude_args: |
+            --max-turns 20
+            --allowedTools "Bash(pnpm install:*),Bash(pnpm turbo run:*),Bash(pnpm test:*),Bash(pnpm lint:*),Bash(pnpm typecheck:*),Bash(pnpm build:*)"

@@ -1,0 +1,27 @@
+{
+  "name": "@monrepo/config",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Configs partagées (tsconfig, ESLint). Aucun code runtime.",
+  "exports": {
+    "./eslint/base": "./eslint/base.mjs",
+    "./eslint/react": "./eslint/react.mjs",
+    "./eslint/next": "./eslint/next.mjs",
+    "./tsconfig/base.json": "./tsconfig/base.json",
+    "./tsconfig/node.json": "./tsconfig/node.json",
+    "./tsconfig/react.json": "./tsconfig/react.json",
+    "./tsconfig/next.json": "./tsconfig/next.json"
+  },
+  "dependencies": {
+    "eslint-config-next": "^16.3.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "typescript-eslint": "^8.71.0",
+    "@eslint/js": "^9.39.0"
+  },
+  "peerDependencies": {
+    "eslint": "^9"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.5"
+  }
+}

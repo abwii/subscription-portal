@@ -1,0 +1,73 @@
+# Mises à jour hebdomadaires, groupées pour limiter le bruit (une PR par groupe).
+# Les majeures de TypeScript, ESLint, Node et Postgres sont ignorées volontairement :
+# elles se décident à la main (voir CLAUDE.md, « Pièges connus »).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Europe/Paris
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    groups:
+      dev-tooling:
+        dependency-type: development
+        update-types: [minor, patch]
+      runtime:
+        dependency-type: production
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      - dependency-name: eslint
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@eslint/js"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directories:
+      - /
+      - /.github/actions/*
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Europe/Paris
+    commit-message:
+      prefix: "ci(deps)"
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directories:
+      - /apps/api
+      - /apps/web
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Europe/Paris
+    commit-message:
+      prefix: "chore(docker)"
+    ignore:
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Europe/Paris
+    commit-message:
+      prefix: "chore(docker)"
+    ignore:
+      - dependency-name: postgres
+        update-types: ["version-update:semver-major"]

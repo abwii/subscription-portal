@@ -1,0 +1,33 @@
+name: Fonctionnalité
+description: Proposer une amélioration
+title: "feat: "
+labels: [enhancement]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Zone concernée
+      options: [web, api, ui, config, ci-cd, docker, docs]
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problème ou besoin
+      description: Qu'est-ce qui est difficile ou impossible aujourd'hui ?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposition
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Critères d'acceptation
+      description: Ce qui doit être vrai pour considérer l'issue terminée (tests, doc, impact déploiement).
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
