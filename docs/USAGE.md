@@ -19,7 +19,7 @@ Le premier push sur `main` fera échouer `deploy-staging` avec un message clair 
 
 ### Checklist de mise en place
 
-- [ ] Renommer le scope `@monrepo/*` et le titre du README (optionnel)
+- [ ] Renommer le scope `@subscription-portal/*` et le titre du README (optionnel)
 - [ ] Fly : 4 apps, 4 tokens de déploiement, `DATABASE_URL` par app api (→ [DEPLOY.md](DEPLOY.md) §1-2)
 - [ ] Neon (ou autre) : une base par environnement ; hôte **complet**, sans `-pooler`, `sslmode=verify-full`
 - [ ] GitHub, environnements `staging` et `production` (→ [DEPLOY.md](DEPLOY.md) §4) :

@@ -1,5 +1,5 @@
 {
-  "extends": "@monrepo/config/tsconfig/next.json",
+  "extends": "@subscription-portal/config/tsconfig/next.json",
   "compilerOptions": {
     "types": ["node", "vitest/globals", "@testing-library/jest-dom"],
     "paths": { "@/*": ["./*"] }

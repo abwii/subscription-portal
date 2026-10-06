@@ -8,7 +8,7 @@ Mode d'emploi du template : `docs/USAGE.md`. Infra et déploiement : `docs/DEPLO
 ## Structure et frontières
 
 ```
-apps/web          Next.js (App Router) : pages, routing, appels à l'API. Dépend de @monrepo/ui.
+apps/web          Next.js (App Router) : pages, routing, appels à l'API. Dépend de @subscription-portal/ui.
 apps/api          Fastify + pg : logique serveur, accès base. Ne dépend ni de ui ni de web.
 packages/ui       Composants React présentationnels. Aucune dépendance vers une app.
 packages/config   tsconfig + ESLint partagés. Aucun code runtime.
@@ -22,8 +22,8 @@ Les dépendances vont des apps vers les packages, jamais l'inverse ; les apps ne
 ```bash
 pnpm install                              # dépendances (lockfile figé en CI)
 pnpm turbo run lint typecheck test build  # tout vérifier, comme la CI (cache Turbo)
-pnpm --filter @monrepo/api test           # tests d'un seul package
-pnpm --filter @monrepo/web typecheck
+pnpm --filter @subscription-portal/api test           # tests d'un seul package
+pnpm --filter @subscription-portal/web typecheck
 docker compose up --build                 # stack complète (copier .env.example en .env)
 ```
 

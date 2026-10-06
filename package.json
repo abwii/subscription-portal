@@ -1,5 +1,5 @@
 {
-  "name": "monrepo",
+  "name": "subscription-portal",
   "private": true,
   "packageManager": "pnpm@10.19.0",
   "engines": {

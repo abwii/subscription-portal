@@ -1,5 +1,5 @@
 {
-  "name": "@monrepo/web",
+  "name": "@subscription-portal/web",
   "version": "0.0.0",
   "private": true,
   "scripts": {
@@ -11,13 +11,13 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@monrepo/ui": "workspace:*",
+    "@subscription-portal/ui": "workspace:*",
     "next": "^16.3.8",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
-    "@monrepo/config": "workspace:*",
+    "@subscription-portal/config": "workspace:*",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^26.6.4",
