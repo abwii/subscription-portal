@@ -9,11 +9,11 @@ COPY packages/config/package.json packages/config/
 COPY packages/ui/package.json packages/ui/
 COPY apps/web/package.json apps/web/
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile --filter @monrepo/web...
+    pnpm install --frozen-lockfile --filter @subscription-portal/web...
 COPY packages/config packages/config
 COPY packages/ui packages/ui
 COPY apps/web apps/web
-RUN pnpm --filter @monrepo/web build
+RUN pnpm --filter @subscription-portal/web build
 
 FROM node:22-alpine AS runtime
 ENV NODE_ENV=production HOSTNAME=0.0.0.0 PORT=3000

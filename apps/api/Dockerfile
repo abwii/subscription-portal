@@ -8,11 +8,11 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY packages/config/package.json packages/config/
 COPY apps/api/package.json apps/api/
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile --filter @monrepo/api...
+    pnpm install --frozen-lockfile --filter @subscription-portal/api...
 COPY packages/config packages/config
 COPY apps/api apps/api
-RUN pnpm --filter @monrepo/api build \
- && pnpm --filter @monrepo/api deploy --legacy --prod /out \
+RUN pnpm --filter @subscription-portal/api build \
+ && pnpm --filter @subscription-portal/api deploy --legacy --prod /out \
  && cp -r apps/api/dist /out/dist
 
 FROM node:22-alpine AS runtime

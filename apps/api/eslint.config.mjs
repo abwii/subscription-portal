@@ -1,3 +1,3 @@
-import base from "@monrepo/config/eslint/base";
+import base from "@subscription-portal/config/eslint/base";
 
 export default base;

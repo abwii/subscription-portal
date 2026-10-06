@@ -1,4 +1,4 @@
-import { Button } from "@monrepo/ui";
+import { Button } from "@subscription-portal/ui";
 
 export default function Home() {
   return (

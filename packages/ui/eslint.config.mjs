@@ -1,3 +1,3 @@
-import react from "@monrepo/config/eslint/react";
+import react from "@subscription-portal/config/eslint/react";
 
 export default react;

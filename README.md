@@ -1,11 +1,11 @@
-# prod-ready-template
+# subscription-portal
 
-[![CI](https://github.com/abwii/prod-ready-template/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/abwii/prod-ready-template/actions/workflows/ci.yml)
+[![CI](https://github.com/abwii/subscription-portal/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/abwii/subscription-portal/actions/workflows/ci.yml)
 
 Monorepo pnpm + Turborepo : front Next.js, API Fastify, Postgres.
 
 ```
-apps/web          Next.js (App Router) — UI, consomme @monrepo/ui
+apps/web          Next.js (App Router) — UI, consomme @subscription-portal/ui
 apps/api          Fastify + Postgres (pg) — /health, /ready
 packages/ui       Composants React présentationnels
 packages/config   tsconfig + ESLint partagés (aucun code runtime)
