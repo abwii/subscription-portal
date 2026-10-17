@@ -12,6 +12,11 @@ import type {
   CreateChangeInvoiceInput,
   SubscriptionForChange,
 } from "./plan-changes.js";
+import type {
+  CreateRenewalInvoiceInput,
+  DueRenewal,
+  RenewalInvoice,
+} from "./renewals.js";
 
 export interface PlanPriceRef {
   id: string;
@@ -97,6 +102,19 @@ export interface SubscriptionRepository {
    * Lève `ChangeInProgressError` ou `DuplicateIdempotencyKeyError`.
    */
   createChangeInvoice(input: CreateChangeInvoiceInput): Promise<ChangeRecord>;
+  /** Programme un downgrade pour le prochain renouvellement (abonnement `active` uniquement). */
+  scheduleDowngrade(subscriptionId: string, planPriceId: string): Promise<void>;
+  /** `cleared` : un downgrade était programmé ; `none` : rien à annuler ; `not_found` : inconnu ou autre compte. */
+  clearScheduledChange(
+    accountId: string,
+    subscriptionId: string,
+  ): Promise<"cleared" | "none" | "not_found">;
+  /** Abonnements `active` échus, sans facture de renouvellement ouverte ni annulation programmée. */
+  listDueRenewals(now: Date, limit: number): Promise<DueRenewal[]>;
+  /** `null` si une facture de renouvellement est déjà ouverte pour cet abonnement. */
+  createRenewalInvoice(
+    input: CreateRenewalInvoiceInput,
+  ): Promise<RenewalInvoice | null>;
   /**
    * Ferme ce qui n'a pas été payé à temps : `pending` créés avant `createdBefore` → `expired`, et
    * demandes de changement ouvertes émises avant `createdBefore`. Factures `void`. Retourne le nombre

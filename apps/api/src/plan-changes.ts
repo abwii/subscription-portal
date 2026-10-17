@@ -19,6 +19,8 @@ export interface SubscriptionForChange {
   currency: string;
   periodStart: Date;
   periodEnd: Date;
+  /** Prix visé par un downgrade programmé, appliqué au prochain renouvellement. */
+  pendingPlanPriceId: string | null;
 }
 
 export interface CreateChangeInvoiceInput {
@@ -53,13 +55,14 @@ export class ChangeInProgressError extends Error {
 
 type ChangeResult =
   | { kind: "created" | "replayed"; record: ChangeRecord; payment: PaymentDetails | null }
+  | { kind: "scheduled"; planPriceId: string; effectiveAt: Date }
   | {
       kind:
         | "not_found"
         | "not_active"
         | "price_unavailable"
         | "currency_mismatch"
-        | "not_an_upgrade"
+        | "same_plan"
         | "invalid_proration"
         | "change_in_progress"
         | "idempotency_key_reused";
@@ -114,7 +117,12 @@ async function changePlan(
   const target = await repo.findPlanPrice(input.planPriceId);
   if (!target?.active) return { kind: "price_unavailable" };
   if (target.currency !== sub.currency) return { kind: "currency_mismatch" };
-  if (!isUpgrade(sub, target)) return { kind: "not_an_upgrade" };
+  if (target.id === sub.planPriceId) return { kind: "same_plan" };
+  if (!isUpgrade(sub, target)) {
+    // Downgrade : aucun argent ne bouge, le changement s'applique au prochain renouvellement.
+    await repo.scheduleDowngrade(sub.id, target.id);
+    return { kind: "scheduled", planPriceId: target.id, effectiveAt: sub.periodEnd };
+  }
 
   const now = clock.now();
   const quote = quoteUpgrade({ current: sub, target, now });
@@ -223,9 +231,16 @@ export function registerPlanChangeRoutes(
           return reply.code(409).send({ error: result.kind });
         case "price_unavailable":
         case "currency_mismatch":
-        case "not_an_upgrade":
+        case "same_plan":
         case "invalid_proration":
           return reply.code(422).send({ error: result.kind });
+        case "scheduled":
+          return reply.code(200).send({
+            scheduledChange: {
+              planPriceId: result.planPriceId,
+              effectiveAt: result.effectiveAt,
+            },
+          });
         case "created":
         case "replayed": {
           const { record, payment } = result;
@@ -242,6 +257,19 @@ export function registerPlanChangeRoutes(
           });
         }
       }
+    },
+  );
+
+  // Annule un downgrade programmé. Idempotent : 204 même s'il n'y en avait pas.
+  app.delete<{ Params: { id: string } }>(
+    "/subscriptions/:id/scheduled-change",
+    async (req, reply) => {
+      const accountId = await authenticate(req);
+      if (accountId === null) return reply.code(401).send({ error: "unauthorized" });
+      if (!UUID.test(req.params.id)) return reply.code(404).send({ error: "not_found" });
+      const outcome = await subscriptions.clearScheduledChange(accountId, req.params.id);
+      if (outcome === "not_found") return reply.code(404).send({ error: "not_found" });
+      return reply.code(204).send();
     },
   );
 }

@@ -1,4 +1,5 @@
 import type { Queryable } from "./db.js";
+import type { DueRenewal } from "./renewals.js";
 import {
   ChangeInProgressError,
   type ChangeRecord,
@@ -185,8 +186,12 @@ export function createSubscriptionRepository(
       const succeeded = event.type === "payment.succeeded";
       const sql = succeeded
         ? // Un paiement `failed` peut encore réussir (le client retente avec le même PaymentIntent).
-          // Checkout (pas de prix visé) : pending → active, période démarrant au paiement.
-          // Changement de plan : le plan bascule ; la période ne repart que si l'intervalle change.
+          // Trois sortes de factures :
+          // - checkout (ni prix visé ni renouvellement) : pending → active, période démarrant au paiement ;
+          // - changement de plan : le plan bascule, la période ne repart que si l'intervalle change ;
+          // - renouvellement : la période avance (active ou past_due → active) et le downgrade
+          //   programmé, s'il existe, s'applique.
+          // Un upgrade payé annule tout downgrade programmé.
           `WITH ${record}, pay AS (
              UPDATE payments SET status = 'succeeded'
              WHERE provider_ref = $3 AND status IN ('pending', 'failed')
@@ -195,24 +200,39 @@ export function createSubscriptionRepository(
            ), inv AS (
              UPDATE invoices SET status = 'paid', paid_at = $4::timestamptz
              WHERE id IN (SELECT invoice_id FROM pay) AND status = 'open'
-             RETURNING subscription_id, target_plan_price_id, starts_new_period
+             RETURNING subscription_id, target_plan_price_id, starts_new_period, is_renewal
            ), sub AS (
              UPDATE subscriptions s
              SET status = 'active',
-                 plan_price_id = COALESCE(inv.target_plan_price_id, s.plan_price_id),
-                 current_period_start =
-                   CASE WHEN inv.target_plan_price_id IS NULL OR inv.starts_new_period
-                        THEN $4::timestamptz ELSE s.current_period_start END,
-                 current_period_end =
-                   CASE WHEN inv.target_plan_price_id IS NULL OR inv.starts_new_period
-                        THEN $4::timestamptz + CASE pp."interval"
-                               WHEN 'month' THEN interval '1 month' ELSE interval '1 year' END
-                        ELSE s.current_period_end END
-             FROM inv, plan_prices pp
+                 plan_price_id = eff.price_id,
+                 pending_plan_price_id =
+                   CASE WHEN inv.is_renewal OR inv.target_plan_price_id IS NOT NULL
+                        THEN NULL ELSE s.pending_plan_price_id END,
+                 current_period_start = CASE
+                   WHEN inv.is_renewal THEN s.current_period_end
+                   WHEN inv.target_plan_price_id IS NULL OR inv.starts_new_period THEN $4::timestamptz
+                   ELSE s.current_period_start END,
+                 current_period_end = CASE
+                   WHEN inv.is_renewal THEN s.current_period_end + eff.step
+                   WHEN inv.target_plan_price_id IS NULL OR inv.starts_new_period
+                     THEN $4::timestamptz + eff.step
+                   ELSE s.current_period_end END
+             FROM inv
+             CROSS JOIN LATERAL (
+               SELECT pp.id AS price_id,
+                      CASE pp."interval" WHEN 'month' THEN interval '1 month'
+                                         ELSE interval '1 year' END AS step
+               FROM subscriptions cur
+               JOIN plan_prices pp ON pp.id = COALESCE(
+                 inv.target_plan_price_id,
+                 CASE WHEN inv.is_renewal THEN COALESCE(cur.pending_plan_price_id, cur.plan_price_id)
+                      ELSE cur.plan_price_id END)
+               WHERE cur.id = inv.subscription_id
+             ) eff
              WHERE s.id = inv.subscription_id
-               AND pp.id = COALESCE(inv.target_plan_price_id, s.plan_price_id)
-               AND ((inv.target_plan_price_id IS NULL AND s.status = 'pending')
-                    OR (inv.target_plan_price_id IS NOT NULL AND s.status = 'active'))
+               AND ((inv.target_plan_price_id IS NULL AND NOT inv.is_renewal AND s.status = 'pending')
+                    OR (inv.target_plan_price_id IS NOT NULL AND s.status = 'active')
+                    OR (inv.is_renewal AND s.status IN ('active', 'past_due')))
              RETURNING s.id
            )
            SELECT (SELECT count(*) FROM ev)::int AS recorded,
@@ -247,6 +267,7 @@ export function createSubscriptionRepository(
         id: string;
         status: SubscriptionForChange["status"];
         plan_price_id: string;
+        pending_plan_price_id: string | null;
         plan_id: string;
         rank: number;
         interval: SubscriptionForChange["interval"];
@@ -255,7 +276,7 @@ export function createSubscriptionRepository(
         current_period_start: Date;
         current_period_end: Date;
       }>(
-        `SELECT s.id, s.status, s.plan_price_id, p.id AS plan_id, p.rank, pp."interval",
+        `SELECT s.id, s.status, s.plan_price_id, s.pending_plan_price_id, p.id AS plan_id, p.rank, pp."interval",
                 pp.amount_cents, pp.currency, s.current_period_start, s.current_period_end
          FROM subscriptions s
          JOIN plan_prices pp ON pp.id = s.plan_price_id
@@ -275,6 +296,7 @@ export function createSubscriptionRepository(
             currency: row.currency.trim(),
             periodStart: row.current_period_start,
             periodEnd: row.current_period_end,
+            pendingPlanPriceId: row.pending_plan_price_id,
           }
         : null;
     },
@@ -301,7 +323,11 @@ export function createSubscriptionRepository(
       const { lines } = input.quote;
       try {
         const [row] = await db.query<ChangeRow>(
-          `WITH inv AS (
+          `WITH clr AS (
+             -- Demander un upgrade annule un downgrade programmé (annulé aussi si la requête échoue : tout
+             -- est dans la même instruction).
+             UPDATE subscriptions SET pending_plan_price_id = NULL WHERE id = $2
+           ), inv AS (
              INSERT INTO invoices
                (account_id, subscription_id, number, status, total_cents, currency, issued_at,
                 target_plan_price_id, starts_new_period, idempotency_key)
@@ -344,6 +370,108 @@ export function createSubscriptionRepository(
           default:
             throw err;
         }
+      }
+    },
+
+    async scheduleDowngrade(subscriptionId, planPriceId) {
+      await db.query(
+        `UPDATE subscriptions SET pending_plan_price_id = $2
+         WHERE id = $1 AND status = 'active'`,
+        [subscriptionId, planPriceId],
+      );
+    },
+
+    async clearScheduledChange(accountId, subscriptionId) {
+      const [row] = await db.query<{ found: boolean; cleared: boolean }>(
+        `WITH target AS (
+           SELECT id, pending_plan_price_id IS NOT NULL AS had_pending
+           FROM subscriptions WHERE id = $1 AND account_id = $2
+         ), upd AS (
+           UPDATE subscriptions SET pending_plan_price_id = NULL
+           WHERE id IN (SELECT id FROM target WHERE had_pending)
+           RETURNING id
+         )
+         SELECT EXISTS (SELECT 1 FROM target) AS found,
+                EXISTS (SELECT 1 FROM upd) AS cleared`,
+        [subscriptionId, accountId],
+      );
+      if (!row?.found) return "not_found";
+      return row.cleared ? "cleared" : "none";
+    },
+
+    async listDueRenewals(now, limit) {
+      const rows = await db.query<{
+        subscription_id: string;
+        account_id: string;
+        plan_price_id: string;
+        amount_cents: number;
+        currency: string;
+        interval: DueRenewal["interval"];
+        current_period_end: Date;
+      }>(
+        // Prix effectif = celui d'un downgrade programmé, sinon le prix courant.
+        `SELECT s.id AS subscription_id, s.account_id, pp.id AS plan_price_id, pp.amount_cents,
+                pp.currency, pp."interval", s.current_period_end
+         FROM subscriptions s
+         JOIN plan_prices pp ON pp.id = COALESCE(s.pending_plan_price_id, s.plan_price_id)
+         WHERE s.status = 'active'
+           AND NOT s.cancel_at_period_end
+           AND s.current_period_end <= $1::timestamptz
+           AND NOT EXISTS (
+             SELECT 1 FROM invoices i
+             WHERE i.subscription_id = s.id AND i.is_renewal AND i.status = 'open')
+         ORDER BY s.current_period_end
+         LIMIT $2`,
+        [now, limit],
+      );
+      return rows.map((row) => ({
+        subscriptionId: row.subscription_id,
+        accountId: row.account_id,
+        planPriceId: row.plan_price_id,
+        amountCents: row.amount_cents,
+        currency: row.currency.trim(),
+        interval: row.interval,
+        periodEnd: row.current_period_end,
+      }));
+    },
+
+    async createRenewalInvoice(input) {
+      try {
+        const [row] = await db.query<{ invoice_id: string; total_cents: number; currency: string }>(
+          `WITH inv AS (
+             INSERT INTO invoices
+               (account_id, subscription_id, number, status, total_cents, currency, issued_at, is_renewal)
+             VALUES ($1, $2, 'INV-' || lpad(nextval('invoice_number_seq')::text, 6, '0'),
+                     'open', $3, $4, $5::timestamptz, true)
+             RETURNING id, total_cents, currency
+           ), line AS (
+             INSERT INTO invoice_lines
+               (invoice_id, type, description, amount_cents, period_start, period_end)
+             SELECT inv.id, 'plan', 'Renouvellement', $3, $6::timestamptz,
+                    $6::timestamptz + CASE $7::text WHEN 'month' THEN interval '1 month'
+                                                    ELSE interval '1 year' END
+             FROM inv
+           )
+           SELECT id AS invoice_id, total_cents, currency FROM inv`,
+          [
+            input.accountId,
+            input.subscriptionId,
+            input.amountCents,
+            input.currency,
+            input.now,
+            input.periodStart,
+            input.interval,
+          ],
+        );
+        if (!row) throw new Error("renewal invoice insert returned no row");
+        return {
+          invoiceId: row.invoice_id,
+          totalCents: row.total_cents,
+          currency: row.currency.trim(),
+        };
+      } catch (err) {
+        if (constraintOf(err) === "invoices_one_open_renewal") return null;
+        throw err;
       }
     },
 

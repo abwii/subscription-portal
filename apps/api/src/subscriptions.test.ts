@@ -55,6 +55,10 @@ function fakeRepo(over: Partial<SubscriptionRepository> = {}) {
     findSubscriptionForChange: () => Promise.resolve(null),
     findChangeByIdempotencyKey: () => Promise.resolve(null),
     createChangeInvoice: () => Promise.reject(new Error("not used")),
+    scheduleDowngrade: () => Promise.resolve(),
+    clearScheduledChange: () => Promise.resolve("none"),
+    listDueRenewals: () => Promise.resolve([]),
+    createRenewalInvoice: () => Promise.resolve(null),
     expirePending: () => Promise.resolve(0),
     ...over,
   };

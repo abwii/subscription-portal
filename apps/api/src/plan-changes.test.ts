@@ -34,6 +34,7 @@ const sub: SubscriptionForChange = {
   currency: "EUR",
   periodStart: new Date(NOW.getTime() - 15 * DAY),
   periodEnd: new Date(NOW.getTime() + 15 * DAY),
+  pendingPlanPriceId: null,
 };
 
 const proPrice: PlanPriceRef = {
@@ -188,13 +189,13 @@ describe("POST /subscriptions/:id/change-plan", () => {
     ).toBe(422);
   });
 
-  it("returns 422 when the target is not an upgrade", async () => {
+  it("returns 422 when the target is the current price", async () => {
     const { repo } = fakeRepo({
-      findPlanPrice: () => Promise.resolve({ ...proPrice, rank: 1, planId: "other" }),
+      findPlanPrice: () => Promise.resolve({ ...proPrice, id: BASIC }),
     });
-    const res = await post(await make({ repo }));
+    const res = await post(await make({ repo }), { body: { planPriceId: BASIC } });
     expect(res.statusCode).toBe(422);
-    expect(res.json()).toMatchObject({ error: "not_an_upgrade" });
+    expect(res.json()).toMatchObject({ error: "same_plan" });
   });
 
   it("returns 422 on a currency mismatch", async () => {

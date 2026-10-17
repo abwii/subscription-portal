@@ -11,7 +11,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "db:migrate": "tsx src/db-cli.ts migrate",
-    "db:seed": "tsx src/db-cli.ts seed"
+    "db:seed": "tsx src/db-cli.ts seed",
+    "jobs:expire-pending": "tsx src/jobs-cli.ts expire-pending",
+    "jobs:renew": "tsx src/jobs-cli.ts renew"
   },
   "dependencies": {
     "@fastify/rate-limit": "^11.2.1",
