@@ -7,6 +7,7 @@ import type { SubscriptionRepository } from "./subscriptions.js";
 
 const summary: LoyaltySummary = {
   xp: 640,
+  streak: { current: 3, best: 5 },
   tier: {
     code: "silver",
     name: "Argent",
@@ -29,6 +30,7 @@ describe("GET /me/loyalty", () => {
           opts.asked?.push(accountId);
           return Promise.resolve(summary);
         },
+        breakExpiredStreaks: () => Promise.resolve(0),
       },
       authenticate: () =>
         Promise.resolve(opts.accountId === undefined ? "acc-1" : opts.accountId),
@@ -48,6 +50,7 @@ describe("GET /me/loyalty", () => {
     expect(res.json()).toEqual({
       loyalty: {
         xp: 640,
+        streak: { current: 3, best: 5 },
         tier: {
           code: "silver",
           name: "Argent",

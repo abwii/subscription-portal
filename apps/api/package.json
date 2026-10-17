@@ -15,6 +15,7 @@
     "jobs:expire-pending": "tsx src/jobs-cli.ts expire-pending",
     "jobs:resume": "tsx src/jobs-cli.ts resume",
     "jobs:close-ended": "tsx src/jobs-cli.ts close-ended",
+    "jobs:break-streaks": "tsx src/jobs-cli.ts break-streaks",
     "jobs:renew": "tsx src/jobs-cli.ts renew"
   },
   "dependencies": {

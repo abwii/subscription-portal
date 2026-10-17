@@ -119,7 +119,8 @@ describe.skipIf(!url)("loyalty XP and tiers (Postgres)", () => {
   it("awards nothing for an invoice under one euro", async () => {
     await paidSubscription(price1999, 99);
     expect(await ledger()).toEqual([]);
-    expect(await account()).toBeUndefined();
+    // la période payée démarre quand même une série : le compte de fidélité existe, à 0 XP
+    expect(await account()).toMatchObject({ xp_total: 0, code: "bronze" });
   });
 
   it("never counts the same invoice twice: a replayed event, another event or a direct re-award do nothing", async () => {
