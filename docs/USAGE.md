@@ -63,6 +63,12 @@ git checkout -b feat/ma-fonctionnalite
   `stripe listen --forward-to localhost:3001/webhooks/payments` fournit le secret `whsec_…`. Avec `PAYMENT_PROVIDER=fake`,
   simuler un événement par `POST /webhooks/payments` avec l'en-tête `x-fake-signature: fake` et le corps
   `{ "id": "evt_1", "type": "payment.succeeded", "providerRef": "<providerRef du checkout>" }`.
+- Upgrade : `POST /subscriptions/:id/change-plan` (`Idempotency-Key` obligatoire, corps `{ "planPriceId": "<uuid>" }`).
+  Prorata au jour : crédit du temps non utilisé et débit du nouveau plan pour le temps restant (jour entamé = dû,
+  arrondi au centime supérieur à la moitié, une fois par ligne). Une facture `open` est créée ; le plan ne change qu'au
+  paiement (webhook), la fin de période reste inchangée sauf passage mensuel → annuel (nouvelle période annuelle, crédit
+  déduit). Une seule demande ouverte par abonnement (409 sinon), fermée au bout de 24 h comme un checkout non payé.
+  Un échec de paiement laisse l'abonnement et le plan intacts ; le client peut retenter avec le même PaymentIntent.
 - Factures : `GET /invoices` et `GET /invoices/:id` (authentifiées, limitées aux factures du compte). Une facture
   émise est immuable (trigger SQL) : seuls son statut et sa date de paiement changent.
 - Tests d'intégration SQL (`*.pg.test.ts`) : exécutés par la CI (service Postgres) ; en local, ignorés sans `TEST_DATABASE_URL`. Pointer vers une base **jetable**
