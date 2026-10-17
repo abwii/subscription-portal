@@ -11,6 +11,7 @@ describe("loadConfig", () => {
       host: "0.0.0.0",
       devAuth: false,
       trustProxy: false,
+      paymentProvider: "none",
     });
   });
 
@@ -43,5 +44,20 @@ describe("loadConfig", () => {
   it("enables trustProxy only when TRUST_PROXY=true", () => {
     expect(loadConfig({ ...valid, TRUST_PROXY: "true" }).trustProxy).toBe(true);
     expect(loadConfig(valid).trustProxy).toBe(false);
+  });
+
+  it("selects the payment provider with PAYMENT_PROVIDER", () => {
+    expect(loadConfig({ ...valid, PAYMENT_PROVIDER: "fake" }).paymentProvider).toBe(
+      "fake",
+    );
+    expect(() => loadConfig({ ...valid, PAYMENT_PROVIDER: "nope" })).toThrow(
+      /PAYMENT_PROVIDER/,
+    );
+  });
+
+  it("refuses the fake payment provider in production", () => {
+    expect(() =>
+      loadConfig({ ...valid, PAYMENT_PROVIDER: "fake", NODE_ENV: "production" }),
+    ).toThrow(/PAYMENT_PROVIDER/);
   });
 });

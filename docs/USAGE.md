@@ -53,6 +53,13 @@ git checkout -b feat/ma-fonctionnalite
   sans lui, les routes authentifiées répondent 401 (fournisseur d'identité à choisir, voir ADR-001).
 - L'API limite le débit par IP (100 requêtes/minute, hors `/health` et `/ready`). Derrière Fly, définir
   `TRUST_PROXY=true`, sinon tous les clients partagent l'IP du proxy.
+- Checkout (`POST /subscriptions`, en-tête `Idempotency-Key` obligatoire, corps `{ "planPriceId": "<uuid>" }`) :
+  sans fournisseur de paiement (`PAYMENT_PROVIDER=none`, défaut) l'API répond 503 ; en local, `PAYMENT_PROVIDER=fake`
+  (refusé en production). Les abonnements `pending` non payés expirent après 24 h via
+  `expirePendingSubscriptions` (`apps/api/src/subscriptions.ts`) : **cette fonction n'est pas encore planifiée**.
+- Tests d'intégration SQL (`*.pg.test.ts`) : ignorés sans `TEST_DATABASE_URL`. Pointer vers une base **jetable**
+  (les tables sont vidées), p. ex. `docker run --rm -e POSTGRES_PASSWORD=local -e POSTGRES_DB=t -p 127.0.0.1:55432:5432 postgres:17-alpine`
+  puis `TEST_DATABASE_URL=postgres://postgres:local@127.0.0.1:55432/t pnpm --filter @subscription-portal/api test`.
 - `main` est protégé : tout passe par une PR dont la CI est verte.
 
 ## 3. Staging puis production

@@ -6,6 +6,11 @@ import {
   type CatalogRepository,
 } from "./catalog.js";
 import { systemClock, type Clock } from "./clock.js";
+import type { PaymentProvider } from "./payments.js";
+import {
+  registerSubscriptionRoutes,
+  type SubscriptionRepository,
+} from "./subscriptions.js";
 
 /** Port minimal vers la base : l'app ne connaît pas `pg`, ce qui la rend testable. */
 export interface Database {
@@ -15,6 +20,9 @@ export interface Database {
 export interface AppOptions {
   db: Database;
   catalog: CatalogRepository;
+  subscriptions: SubscriptionRepository;
+  /** Absent : le checkout répond 503. */
+  payments?: PaymentProvider;
   clock?: Clock;
   /** Retourne l'id du compte authentifié, ou `null`. Refus par défaut. */
   authenticate?: Authenticate;
@@ -28,6 +36,8 @@ export interface AppOptions {
 export async function buildApp({
   db,
   catalog,
+  subscriptions,
+  payments,
   clock = systemClock,
   authenticate = () => Promise.resolve(null),
   rateLimit: limits = { max: 100, timeWindowMs: 60_000 },
@@ -56,6 +66,7 @@ export async function buildApp({
   });
 
   registerCatalogRoutes(app, { catalog, clock, authenticate });
+  registerSubscriptionRoutes(app, { subscriptions, payments, clock, authenticate });
 
   return app;
 }
