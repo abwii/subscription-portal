@@ -97,6 +97,13 @@ git checkout -b feat/ma-fonctionnalite
   Un cadeau non payé est fermé au bout de 24 h (`jobs:expire-pending`, qui expire aussi les cadeaux périmés).
   `MAILER=console` (local, refusé en production) écrit les e-mails, **code compris**, sur la sortie standard ; par défaut
   (`none`) aucun e-mail n'est envoyé : aucun fournisseur d'e-mail n'est branché (port `Mailer`).
+- Échange d'un cadeau : `POST /gifts/redeem` avec `{ "code": "…" }` (le code est dans le **corps**, jamais dans l'URL : les URL sont
+  journalisées). Cadeau `pending` non périmé et compte sans abonnement vivant → abonnement `active` créé **sans paiement**, sur
+  toute la durée offerte (une seule période longue) avec annulation programmée à son terme : jamais renouvelé, clos par
+  `jobs:close-ended`, droits coupés à l'échéance même avant le job. Réponses : 404 code inconnu (ou cadeau non payé), 410 déjà
+  échangé / périmé / remboursé, 409 abonnement vivant (le cadeau reste utilisable). Limite : 10 tentatives par minute et par client,
+  tous résultats confondus. Un abonnement offert ne peut être ni mis en pause, ni changé de plan, ni « dé-annulé » (409
+  `gifted_subscription`) ; il peut être annulé.
 - Jobs périodiques (à planifier hors de l'API : cron, machine planifiée Fly — **pas encore planifiés**) :
   `pnpm --filter @subscription-portal/api jobs:renew` (facture les renouvellements échus ; au paiement la période
   avance et le downgrade programmé s'applique ; un échec passe l'abonnement en `past_due`) et `jobs:expire-pending`

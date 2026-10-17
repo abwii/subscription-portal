@@ -295,6 +295,7 @@ export function createSubscriptionRepository(
         plan_price_id: string;
         pending_plan_price_id: string | null;
         cancel_at_period_end: boolean;
+        gift_id: string | null;
         plan_id: string;
         rank: number;
         interval: SubscriptionForChange["interval"];
@@ -303,7 +304,7 @@ export function createSubscriptionRepository(
         current_period_start: Date;
         current_period_end: Date;
       }>(
-        `SELECT s.id, s.status, s.plan_price_id, s.pending_plan_price_id, s.cancel_at_period_end,
+        `SELECT s.id, s.status, s.plan_price_id, s.pending_plan_price_id, s.cancel_at_period_end, s.gift_id,
                 p.id AS plan_id, p.rank, pp."interval",
                 pp.amount_cents, pp.currency, s.current_period_start, s.current_period_end
          FROM subscriptions s
@@ -326,6 +327,7 @@ export function createSubscriptionRepository(
             periodEnd: row.current_period_end,
             pendingPlanPriceId: row.pending_plan_price_id,
             cancelAtPeriodEnd: row.cancel_at_period_end,
+            giftId: row.gift_id,
           }
         : null;
     },

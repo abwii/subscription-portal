@@ -45,6 +45,7 @@ export function registerLifecycleRoutes(
       if (sub.status !== "active") {
         return reply.code(409).send({ error: "subscription_not_active" });
       }
+      if (sub.giftId) return reply.code(409).send({ error: "gifted_subscription" });
 
       const now = clock.now();
       const resumeAt = new Date(req.body.resumeAt);
@@ -133,6 +134,7 @@ export function registerLifecycleRoutes(
       if (sub.status !== "active") {
         return reply.code(409).send({ error: "subscription_not_active" });
       }
+      if (sub.giftId) return reply.code(409).send({ error: "gifted_subscription" });
 
       if (sub.cancelAtPeriodEnd) {
         await subscriptions.revokeCancellation({ subscriptionId: sub.id, now: clock.now() });

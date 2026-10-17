@@ -25,6 +25,7 @@ const base: SubscriptionForChange = {
   periodEnd,
   pendingPlanPriceId: null,
   cancelAtPeriodEnd: false,
+  giftId: null,
 };
 
 /** Dépôt factice à état : les routes relisent l'abonnement après l'écriture. */

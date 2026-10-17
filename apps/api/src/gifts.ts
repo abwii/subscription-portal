@@ -76,9 +76,18 @@ export interface GiftRepository {
   /** Cadeau payé, avec destinataire, pas encore notifié, lié à ce paiement. `null` sinon. */
   findNotification(providerRef: string): Promise<GiftNotification | null>;
   markNotified(giftId: string, at: Date): Promise<void>;
+  /**
+   * Échange atomique : cadeau `pending` non périmé et compte sans abonnement vivant → abonnement `active` sur
+   * toute la durée offerte (annulation programmée à son terme), cadeau `redeemed`. Un seul échange réussit si le
+   * même code est présenté en parallèle.
+   */
+  redeem(input: { code: string; accountId: string; now: Date }): Promise<RedeemResult>;
   /** `pending` dont la validité est dépassée → `expired`. Retourne leur nombre ; rejouable. */
   expireStale(now: Date): Promise<number>;
 }
+
+/** Tentatives d'échange par minute et par client (toutes issues confondues). */
+const REDEEM_ATTEMPTS_PER_MINUTE = 10;
 
 const UUID_PATTERN =
   "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
@@ -248,6 +257,50 @@ export function registerGiftRoutes(
     },
   );
 
+  // Le code est dans le corps (jamais dans l'URL, que les journaux enregistrent). Chaque tentative est
+  // comptée par une limite stricte par client, quel qu'en soit le résultat : deviner un code est coûteux.
+  app.post<{ Body: { code: string } }>(
+    "/gifts/redeem",
+    {
+      config: { rateLimit: { max: REDEEM_ATTEMPTS_PER_MINUTE, timeWindow: 60_000 } },
+      schema: {
+        body: {
+          type: "object",
+          required: ["code"],
+          additionalProperties: false,
+          properties: { code: { type: "string", minLength: 1, maxLength: 128 } },
+        },
+      },
+    },
+    async (req, reply) => {
+      const accountId = await authenticate(req);
+      if (accountId === null) return reply.code(401).send({ error: "unauthorized" });
+
+      const result = await gifts.redeem({
+        code: req.body.code,
+        accountId,
+        now: clock.now(),
+      });
+      switch (result.kind) {
+        case "not_found":
+          return reply.code(404).send({ error: "gift_not_found" });
+        case "unavailable":
+          return reply.code(410).send({ error: "gift_unavailable" });
+        case "live_subscription":
+          return reply.code(409).send({ error: "live_subscription_exists" });
+        case "redeemed":
+          return reply.code(201).send({
+            subscription: {
+              id: result.subscriptionId,
+              status: "active",
+              currentPeriodEnd: result.periodEnd,
+              giftedUntil: result.periodEnd,
+            },
+          });
+      }
+    },
+  );
+
   app.get("/gifts", async (req, reply) => {
     const accountId = await authenticate(req);
     if (accountId === null) return reply.code(401).send({ error: "unauthorized" });
@@ -261,3 +314,12 @@ export function registerGiftRoutes(
     };
   });
 }
+
+export type RedeemResult =
+  | { kind: "redeemed"; subscriptionId: string; periodStart: Date; periodEnd: Date }
+  /** Code inconnu, ou cadeau pas encore payé : on ne révèle rien de plus. */
+  | { kind: "not_found" }
+  /** Déjà échangé, périmé ou remboursé. */
+  | { kind: "unavailable" }
+  /** Le compte a déjà un abonnement vivant : le cadeau reste utilisable. */
+  | { kind: "live_subscription" };

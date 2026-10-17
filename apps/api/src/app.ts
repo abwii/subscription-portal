@@ -1,3 +1,4 @@
+import type { Writable } from "node:stream";
 import rateLimit from "@fastify/rate-limit";
 import Fastify, { type FastifyInstance } from "fastify";
 import {
@@ -38,6 +39,8 @@ export interface AppOptions {
   gifts?: GiftRepository;
   /** Absent : aucun e-mail n'est envoyé (l'offrant retrouve le code via `GET /gifts`). */
   mailer?: Mailer;
+  /** Flux de journalisation (injectable pour les tests) ; remplace `logger`. */
+  logStream?: Writable;
   /** Générateur de codes cadeau (injectable pour les tests). */
   giftCode?: () => string;
   clock?: Clock;
@@ -64,9 +67,10 @@ export async function buildApp({
   authenticate = () => Promise.resolve(null),
   rateLimit: limits = { max: 100, timeWindowMs: 60_000 },
   trustProxy = false,
+  logStream,
   logger = true,
 }: AppOptions): Promise<FastifyInstance> {
-  const app = Fastify({ logger, trustProxy });
+  const app = Fastify({ logger: logStream ? { stream: logStream } : logger, trustProxy });
   await app.register(rateLimit, {
     max: limits.max,
     timeWindow: limits.timeWindowMs,
