@@ -2,6 +2,8 @@ export interface Config {
   databaseUrl: string;
   port: number;
   host: string;
+  /** Authentification de développement par en-tête `X-Account-Id`. Jamais en production. */
+  devAuth: boolean;
 }
 
 export function loadConfig(env: Record<string, string | undefined>): Config {
@@ -13,5 +15,10 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     throw new Error("PORT must be an integer between 1 and 65535");
   }
 
-  return { databaseUrl, port, host: env.HOST ?? "0.0.0.0" };
+  const devAuth = env.DEV_AUTH === "true";
+  if (devAuth && env.NODE_ENV === "production") {
+    throw new Error("DEV_AUTH must not be enabled in production");
+  }
+
+  return { databaseUrl, port, host: env.HOST ?? "0.0.0.0", devAuth };
 }

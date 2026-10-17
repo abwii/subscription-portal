@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { buildApp, type Database } from "./app.js";
+import type { CatalogRepository } from "./catalog.js";
 
+const noCatalog = {} as CatalogRepository;
 const healthyDb: Database = { ping: () => Promise.resolve() };
 const brokenDb: Database = {
   ping: () => Promise.reject(new Error("connection refused")),
@@ -9,7 +11,7 @@ const brokenDb: Database = {
 describe("api", () => {
   const apps: Awaited<ReturnType<typeof buildApp>>[] = [];
   const make = async (db: Database) => {
-    const app = await buildApp({ db, logger: false });
+    const app = await buildApp({ db, catalog: noCatalog, logger: false });
     apps.push(app);
     return app;
   };

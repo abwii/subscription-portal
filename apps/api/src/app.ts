@@ -1,4 +1,10 @@
 import Fastify, { type FastifyInstance } from "fastify";
+import {
+  registerCatalogRoutes,
+  type Authenticate,
+  type CatalogRepository,
+} from "./catalog.js";
+import { systemClock, type Clock } from "./clock.js";
 
 /** Port minimal vers la base : l'app ne connaît pas `pg`, ce qui la rend testable. */
 export interface Database {
@@ -7,11 +13,18 @@ export interface Database {
 
 export interface AppOptions {
   db: Database;
+  catalog: CatalogRepository;
+  clock?: Clock;
+  /** Retourne l'id du compte authentifié, ou `null`. Refus par défaut. */
+  authenticate?: Authenticate;
   logger?: boolean;
 }
 
 export async function buildApp({
   db,
+  catalog,
+  clock = systemClock,
+  authenticate = () => Promise.resolve(null),
   logger = true,
 }: AppOptions): Promise<FastifyInstance> {
   const app = Fastify({ logger });
@@ -30,6 +43,8 @@ export async function buildApp({
       return reply.code(503).send({ status: "unavailable" });
     }
   });
+
+  registerCatalogRoutes(app, { catalog, clock, authenticate });
 
   return app;
 }

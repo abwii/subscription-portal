@@ -9,6 +9,7 @@ describe("loadConfig", () => {
       databaseUrl: valid.DATABASE_URL,
       port: 3001,
       host: "0.0.0.0",
+      devAuth: false,
     });
   });
 
@@ -25,5 +26,16 @@ describe("loadConfig", () => {
   it("throws when PORT is not a valid port", () => {
     expect(() => loadConfig({ ...valid, PORT: "abc" })).toThrow(/PORT/);
     expect(() => loadConfig({ ...valid, PORT: "70000" })).toThrow(/PORT/);
+  });
+
+  it("enables the dev header authentication only when DEV_AUTH=true", () => {
+    expect(loadConfig({ ...valid, DEV_AUTH: "true" }).devAuth).toBe(true);
+    expect(loadConfig({ ...valid, DEV_AUTH: "false" }).devAuth).toBe(false);
+  });
+
+  it("refuses DEV_AUTH=true in production", () => {
+    expect(() =>
+      loadConfig({ ...valid, DEV_AUTH: "true", NODE_ENV: "production" }),
+    ).toThrow(/DEV_AUTH/);
   });
 });

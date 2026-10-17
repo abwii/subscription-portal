@@ -1,10 +1,16 @@
 import { buildApp } from "./app.js";
+import { createAuthenticate } from "./auth.js";
+import { createCatalogRepository } from "./catalog.pg.js";
 import { loadConfig } from "./config.js";
 import { createDatabase } from "./db.js";
 
 const config = loadConfig(process.env);
 const db = createDatabase(config.databaseUrl);
-const app = await buildApp({ db });
+const app = await buildApp({
+  db,
+  catalog: createCatalogRepository(db),
+  authenticate: createAuthenticate({ devAuth: config.devAuth }),
+});
 
 async function shutdown(signal: string) {
   app.log.info({ signal }, "shutting down");

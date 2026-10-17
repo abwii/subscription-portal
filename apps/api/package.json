@@ -9,7 +9,9 @@
     "start": "node dist/server.js",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "db:migrate": "tsx src/db-cli.ts migrate",
+    "db:seed": "tsx src/db-cli.ts seed"
   },
   "dependencies": {
     "fastify": "^5.12.5",

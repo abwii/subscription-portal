@@ -46,6 +46,11 @@ git checkout -b feat/ma-fonctionnalite
 - Avant de pousser : `pnpm turbo run lint typecheck test build` (le 2ᵉ run est servi par le cache Turbo).
 - Stack complète avec Postgres : `docker compose up --build`. Les `pnpm dev` des apps ne chargent pas
   `.env` : exportez `DATABASE_URL` dans le terminal ou passez par compose.
+- Base locale (API) : `DATABASE_URL` exporté, puis `pnpm --filter @subscription-portal/api db:migrate`
+  (applique `apps/api/migrations/*.sql`) et `db:seed` (plans, droits et compte de démo, local uniquement).
+  Pour appeler `GET /me/entitlements` en local : `DEV_AUTH=true` puis l'en-tête
+  `X-Account-Id: 00000000-0000-4000-8000-000000000001`. `DEV_AUTH` est refusé si `NODE_ENV=production` ;
+  sans lui, les routes authentifiées répondent 401 (fournisseur d'identité à choisir, voir ADR-001).
 - `main` est protégé : tout passe par une PR dont la CI est verte.
 
 ## 3. Staging puis production
