@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { buildApp } from "./app.js";
 import type { CatalogRepository } from "./catalog.js";
 import type { InvoiceRepository } from "./invoices.js";
-import type { LoyaltyRepository, LoyaltySummary } from "./loyalty.js";
+import type { LoyaltySummary } from "./loyalty.js";
 import type { SubscriptionRepository } from "./subscriptions.js";
 
 const summary: LoyaltySummary = {
