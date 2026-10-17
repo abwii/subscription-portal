@@ -69,6 +69,16 @@ git checkout -b feat/ma-fonctionnalite
   paiement (webhook), la fin de période reste inchangée sauf passage mensuel → annuel (nouvelle période annuelle, crédit
   déduit). Une seule demande ouverte par abonnement (409 sinon), fermée au bout de 24 h comme un checkout non payé.
   Un échec de paiement laisse l'abonnement et le plan intacts ; le client peut retenter avec le même PaymentIntent.
+- Downgrade : le même `POST /subscriptions/:id/change-plan` vers un plan de rang inférieur (ou annuel → mensuel du même
+  plan) ne facture rien et ne rembourse rien : il programme le changement (`pending_plan_price_id`, réponse
+  `scheduledChange`) pour la fin de période ; les droits actuels restent. `DELETE /subscriptions/:id/scheduled-change`
+  l'annule (204, idempotent) ; demander un upgrade l'annule aussi.
+- Jobs périodiques (à planifier hors de l'API : cron, machine planifiée Fly — **pas encore planifiés**) :
+  `pnpm --filter @subscription-portal/api jobs:renew` (facture les renouvellements échus ; au paiement la période
+  avance et le downgrade programmé s'applique ; un échec passe l'abonnement en `past_due`) et `jobs:expire-pending`
+  (ferme les checkouts et changements non payés après 24 h). Les deux sont rejouables. Limite : le paiement de
+  renouvellement est créé comme un checkout ; un prélèvement automatique hors session exige un moyen de paiement
+  enregistré (pas dans le modèle actuel).
 - Factures : `GET /invoices` et `GET /invoices/:id` (authentifiées, limitées aux factures du compte). Une facture
   émise est immuable (trigger SQL) : seuls son statut et sa date de paiement changent.
 - Tests d'intégration SQL (`*.pg.test.ts`) : exécutés par la CI (service Postgres) ; en local, ignorés sans `TEST_DATABASE_URL`. Pointer vers une base **jetable**
