@@ -33,6 +33,24 @@ jobs:
     name: Lint, typecheck, test, build
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Base jetable pour les tests d'intégration SQL (*.pg.test.ts) : sans elle ils sont ignorés.
+    # Même version que docker-compose.yml ; identifiants éphémères, propres à ce job.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://ci:ci@localhost:5432/ci
     steps:
       - uses: actions/checkout@v7
 

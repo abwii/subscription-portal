@@ -57,7 +57,7 @@ git checkout -b feat/ma-fonctionnalite
   sans fournisseur de paiement (`PAYMENT_PROVIDER=none`, défaut) l'API répond 503 ; en local, `PAYMENT_PROVIDER=fake`
   (refusé en production). Les abonnements `pending` non payés expirent après 24 h via
   `expirePendingSubscriptions` (`apps/api/src/subscriptions.ts`) : **cette fonction n'est pas encore planifiée**.
-- Tests d'intégration SQL (`*.pg.test.ts`) : ignorés sans `TEST_DATABASE_URL`. Pointer vers une base **jetable**
+- Tests d'intégration SQL (`*.pg.test.ts`) : exécutés par la CI (service Postgres) ; en local, ignorés sans `TEST_DATABASE_URL`. Pointer vers une base **jetable**
   (les tables sont vidées), p. ex. `docker run --rm -e POSTGRES_PASSWORD=local -e POSTGRES_DB=t -p 127.0.0.1:55432:5432 postgres:17-alpine`
   puis `TEST_DATABASE_URL=postgres://postgres:local@127.0.0.1:55432/t pnpm --filter @subscription-portal/api test`.
 - `main` est protégé : tout passe par une PR dont la CI est verte.
