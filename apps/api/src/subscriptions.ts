@@ -17,6 +17,7 @@ import type {
   DueRenewal,
   RenewalInvoice,
 } from "./renewals.js";
+import type { ResumedInvoice } from "./resume.js";
 
 export interface PlanPriceRef {
   id: string;
@@ -122,6 +123,14 @@ export interface SubscriptionRepository {
    * `false` s'il n'est pas actif ou si une facture de renouvellement / changement attend son paiement.
    */
   pause(input: { subscriptionId: string; now: Date; resumeAt: Date }): Promise<boolean>;
+  /**
+   * `paused` → `active` avec une nouvelle période à `now` (prix effectif : celui d'un downgrade programmé,
+   * sinon le prix courant), facture de reprise `open` et événement `resumed`, en une seule requête.
+   * `null` si l'abonnement n'est pas en pause.
+   */
+  resume(input: { subscriptionId: string; now: Date }): Promise<ResumedInvoice | null>;
+  /** Abonnements `paused` dont `resume_at` est passé. */
+  listDueResumes(now: Date, limit: number): Promise<string[]>;
   /**
    * Ferme ce qui n'a pas été payé à temps : `pending` créés avant `createdBefore` → `expired`, et
    * demandes de changement ouvertes émises avant `createdBefore`. Factures `void`. Retourne le nombre

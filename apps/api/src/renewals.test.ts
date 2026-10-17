@@ -91,7 +91,7 @@ describe("renewDueSubscriptions", () => {
   it("uses a stable provider key per invoice so a retry cannot double charge", async () => {
     const s = setup({ dues: [due()] });
     await renewDueSubscriptions({ repo: s.repo, payments: s.payments, clock });
-    expect(s.paymentCalls[0]?.idempotencyKey).toBe("renewal:inv-sub-1");
+    expect(s.paymentCalls[0]?.idempotencyKey).toBe("invoice:inv-sub-1");
   });
 
   it("skips a subscription whose renewal invoice already exists", async () => {

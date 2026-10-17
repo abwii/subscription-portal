@@ -77,10 +77,16 @@ git checkout -b feat/ma-fonctionnalite
   par période de 12 mois, abonnement `active` uniquement, aucune facture de renouvellement ou de changement impayée).
   La facturation et les droits sont suspendus ; la période en cours n'est ni remboursée ni reportée (ADR-001 : à la
   reprise une nouvelle période démarre). Chaque pause est journalisée dans `subscription_events` (append-only).
+- Reprise : `POST /subscriptions/:id/resume` (abonnement `paused` uniquement, sinon 409) ou automatiquement quand `resume_at`
+  est passé (`jobs:resume`). L'abonnement redevient `active` immédiatement, une nouvelle période démarre, une facture de reprise
+  `open` est émise (au prix d'un downgrade programmé s'il existe) et son paiement créé. Si le paiement échoue (webhook),
+  l'abonnement passe `past_due` ; s'il n'a pas pu être créé (502, avec `invoiceId`), `POST /invoices/:id/pay` le recrée.
+  `POST /invoices/:id/pay` (facture `open` du compte) utilise une clé fournisseur stable par facture : des appels répétés
+  rendent le même paiement pour les factures de renouvellement et de reprise.
 - Jobs périodiques (à planifier hors de l'API : cron, machine planifiée Fly — **pas encore planifiés**) :
   `pnpm --filter @subscription-portal/api jobs:renew` (facture les renouvellements échus ; au paiement la période
   avance et le downgrade programmé s'applique ; un échec passe l'abonnement en `past_due`) et `jobs:expire-pending`
-  (ferme les checkouts et changements non payés après 24 h). Les deux sont rejouables. Limite : le paiement de
+  (ferme les checkouts et changements non payés après 24 h) et `jobs:resume` (reprend les abonnements dont la date de reprise est passée). Tous sont rejouables. Limite : le paiement de
   renouvellement est créé comme un checkout ; un prélèvement automatique hors session exige un moyen de paiement
   enregistré (pas dans le modèle actuel).
 - Factures : `GET /invoices` et `GET /invoices/:id` (authentifiées, limitées aux factures du compte). Une facture

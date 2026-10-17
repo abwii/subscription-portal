@@ -71,7 +71,8 @@ export async function renewDueSubscriptions(deps: {
         invoiceId: invoice.invoiceId,
         amountCents: invoice.totalCents,
         currency: invoice.currency,
-        idempotencyKey: `renewal:${invoice.invoiceId}`,
+        // Même clé que `POST /invoices/:id/pay` : le fournisseur rend le même paiement.
+        idempotencyKey: `invoice:${invoice.invoiceId}`,
       });
       await repo.recordPayment(invoice.invoiceId, payment.providerRef, invoice.totalCents);
       renewed++;

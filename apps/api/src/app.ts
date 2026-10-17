@@ -7,7 +7,9 @@ import {
 } from "./catalog.js";
 import { systemClock, type Clock } from "./clock.js";
 import { registerInvoiceRoutes, type InvoiceRepository } from "./invoices.js";
+import { registerInvoicePaymentRoutes } from "./invoice-payments.js";
 import { registerLifecycleRoutes } from "./lifecycle.js";
+import { registerResumeRoutes } from "./resume.js";
 import { registerPlanChangeRoutes } from "./plan-changes.js";
 import { registerWebhookRoutes } from "./webhooks.js";
 import type { PaymentProvider, PaymentWebhookVerifier } from "./payments.js";
@@ -78,6 +80,8 @@ export async function buildApp({
   registerSubscriptionRoutes(app, { subscriptions, payments, clock, authenticate });
   registerPlanChangeRoutes(app, { subscriptions, payments, clock, authenticate });
   registerLifecycleRoutes(app, { subscriptions, clock, authenticate });
+  registerResumeRoutes(app, { subscriptions, payments, clock, authenticate });
+  registerInvoicePaymentRoutes(app, { invoices, subscriptions, payments, authenticate });
   registerInvoiceRoutes(app, { invoices, authenticate });
   registerWebhookRoutes(app, { subscriptions, verifier: webhookVerifier, clock });
 
