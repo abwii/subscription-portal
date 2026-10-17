@@ -200,7 +200,7 @@ export function createSubscriptionRepository(
            ), inv AS (
              UPDATE invoices SET status = 'paid', paid_at = $4::timestamptz
              WHERE id IN (SELECT invoice_id FROM pay) AND status = 'open'
-             RETURNING subscription_id, target_plan_price_id, starts_new_period, is_renewal
+             RETURNING subscription_id, target_plan_price_id, starts_new_period, is_renewal, is_resume
            ), sub AS (
              UPDATE subscriptions s
              SET status = 'active',
@@ -209,10 +209,12 @@ export function createSubscriptionRepository(
                    CASE WHEN inv.is_renewal OR inv.target_plan_price_id IS NOT NULL
                         THEN NULL ELSE s.pending_plan_price_id END,
                  current_period_start = CASE
+                   WHEN inv.is_resume THEN s.current_period_start
                    WHEN inv.is_renewal THEN s.current_period_end
                    WHEN inv.target_plan_price_id IS NULL OR inv.starts_new_period THEN $4::timestamptz
                    ELSE s.current_period_start END,
                  current_period_end = CASE
+                   WHEN inv.is_resume THEN s.current_period_end
                    WHEN inv.is_renewal THEN s.current_period_end + eff.step
                    WHEN inv.target_plan_price_id IS NULL OR inv.starts_new_period
                      THEN $4::timestamptz + eff.step
@@ -230,9 +232,10 @@ export function createSubscriptionRepository(
                WHERE cur.id = inv.subscription_id
              ) eff
              WHERE s.id = inv.subscription_id
-               AND ((inv.target_plan_price_id IS NULL AND NOT inv.is_renewal AND s.status = 'pending')
+               AND ((inv.target_plan_price_id IS NULL AND NOT inv.is_renewal AND NOT inv.is_resume
+                     AND s.status = 'pending')
                     OR (inv.target_plan_price_id IS NOT NULL AND s.status = 'active')
-                    OR (inv.is_renewal AND s.status IN ('active', 'past_due')))
+                    OR ((inv.is_renewal OR inv.is_resume) AND s.status IN ('active', 'past_due')))
              RETURNING s.id
            )
            SELECT (SELECT count(*) FROM ev)::int AS recorded,
@@ -507,6 +510,66 @@ export function createSubscriptionRepository(
         [subscriptionId, now, resumeAt],
       );
       return (row?.paused ?? 0) > 0;
+    },
+
+    async resume({ subscriptionId, now }) {
+      const [row] = await db.query<{
+        invoice_id: string;
+        account_id: string;
+        total_cents: number;
+        currency: string;
+      }>(
+        `WITH s AS (
+           UPDATE subscriptions s
+           SET status = 'active', plan_price_id = pp.id, pending_plan_price_id = NULL,
+               paused_at = NULL, resume_at = NULL,
+               current_period_start = $2::timestamptz,
+               current_period_end = $2::timestamptz + CASE pp."interval"
+                 WHEN 'month' THEN interval '1 month' ELSE interval '1 year' END
+           FROM plan_prices pp
+           WHERE s.id = $1 AND s.status = 'paused'
+             AND pp.id = COALESCE(s.pending_plan_price_id, s.plan_price_id)
+           RETURNING s.id, s.account_id, pp.amount_cents, pp.currency,
+                     s.current_period_start, s.current_period_end
+         ), inv AS (
+           INSERT INTO invoices
+             (account_id, subscription_id, number, status, total_cents, currency, issued_at, is_resume)
+           SELECT s.account_id, s.id, 'INV-' || lpad(nextval('invoice_number_seq')::text, 6, '0'),
+                  'open', s.amount_cents, s.currency, $2::timestamptz, true
+           FROM s
+           RETURNING id, account_id, total_cents, currency
+         ), line AS (
+           INSERT INTO invoice_lines
+             (invoice_id, type, description, amount_cents, period_start, period_end)
+           SELECT inv.id, 'plan', 'Reprise de l''abonnement', s.amount_cents,
+                  s.current_period_start, s.current_period_end
+           FROM inv, s
+         ), ev AS (
+           INSERT INTO subscription_events (subscription_id, type, data, created_at)
+           SELECT s.id, 'resumed', '{}'::jsonb, $2::timestamptz FROM s
+         )
+         SELECT id AS invoice_id, account_id, total_cents, currency FROM inv`,
+        [subscriptionId, now],
+      );
+      return row
+        ? {
+            invoiceId: row.invoice_id,
+            accountId: row.account_id,
+            totalCents: row.total_cents,
+            currency: row.currency.trim(),
+          }
+        : null;
+    },
+
+    async listDueResumes(now, limit) {
+      const rows = await db.query<{ id: string }>(
+        `SELECT id FROM subscriptions
+         WHERE status = 'paused' AND resume_at <= $1::timestamptz
+         ORDER BY resume_at
+         LIMIT $2`,
+        [now, limit],
+      );
+      return rows.map((row) => row.id);
     },
 
     async expirePending(createdBefore) {
