@@ -20,6 +20,7 @@ const sub = (over: Partial<SubscriptionRef> = {}): SubscriptionRef => ({
   status: "active",
   planId: "plan-pro",
   currentPeriodEnd: new Date(NOW.getTime() + 10 * day),
+  cancelAtPeriodEnd: false,
   ...over,
 });
 
@@ -41,6 +42,21 @@ describe("grantsEntitlements", () => {
       currentPeriodEnd: new Date(NOW.getTime() - 6 * day),
     });
     expect(grantsEntitlements(pastDue, NOW)).toBe(true);
+  });
+
+  it("keeps rights until the end of the period when a cancellation is scheduled", () => {
+    const cancelling = sub({ cancelAtPeriodEnd: true });
+    expect(grantsEntitlements(cancelling, NOW)).toBe(true);
+  });
+
+  it("removes rights at the end of the period for a scheduled cancellation, even if the closing job has not run", () => {
+    const ended = sub({
+      cancelAtPeriodEnd: true,
+      currentPeriodEnd: new Date(NOW.getTime() - 1000),
+    });
+    expect(grantsEntitlements(ended, NOW)).toBe(false);
+    const exactlyAtEnd = sub({ cancelAtPeriodEnd: true, currentPeriodEnd: NOW });
+    expect(grantsEntitlements(exactlyAtEnd, NOW)).toBe(false);
   });
 
   it("removes rights once the grace period is over", () => {

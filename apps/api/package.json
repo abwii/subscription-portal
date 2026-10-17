@@ -14,6 +14,7 @@
     "db:seed": "tsx src/db-cli.ts seed",
     "jobs:expire-pending": "tsx src/jobs-cli.ts expire-pending",
     "jobs:resume": "tsx src/jobs-cli.ts resume",
+    "jobs:close-ended": "tsx src/jobs-cli.ts close-ended",
     "jobs:renew": "tsx src/jobs-cli.ts renew"
   },
   "dependencies": {

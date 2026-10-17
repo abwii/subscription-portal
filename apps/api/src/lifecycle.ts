@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { Authenticate } from "./catalog.js";
 import type { Clock } from "./clock.js";
+import type { SubscriptionForChange } from "./plan-changes.js";
 import type { SubscriptionRepository } from "./subscriptions.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -75,6 +76,69 @@ export function registerLifecycleRoutes(
           resumeAt,
         },
       };
+    },
+  );
+
+  const view = (sub: SubscriptionForChange) => ({
+    subscription: {
+      id: sub.id,
+      status: sub.status,
+      cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+      currentPeriodEnd: sub.periodEnd,
+    },
+  });
+
+  // Annulation : `active` → programmée pour la fin de période (droits conservés, aucun remboursement) ;
+  // `paused` / `past_due` → immédiate ; déjà annulé ou déjà programmée → 200 sans écriture (idempotent).
+  app.post<{ Params: { id: string } }>("/subscriptions/:id/cancel", async (req, reply) => {
+    const accountId = await authenticate(req);
+    if (accountId === null) return reply.code(401).send({ error: "unauthorized" });
+    // 404 (et non 403) pour l'abonnement d'un autre compte : son existence reste cachée.
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ error: "not_found" });
+
+    const sub = await subscriptions.findSubscriptionForChange(accountId, req.params.id);
+    if (!sub) return reply.code(404).send({ error: "not_found" });
+
+    const input = { subscriptionId: sub.id, now: clock.now() };
+    switch (sub.status) {
+      case "active":
+        if (!sub.cancelAtPeriodEnd) await subscriptions.scheduleCancellation(input);
+        break;
+      case "paused":
+      case "past_due":
+        await subscriptions.cancelNow(input);
+        break;
+      case "canceled":
+        break;
+      case "pending":
+      case "expired":
+        return reply.code(409).send({ error: "subscription_not_cancellable" });
+    }
+
+    // Relecture : si l'état a changé entre-temps, la réponse reflète l'état réel.
+    const after = await subscriptions.findSubscriptionForChange(accountId, sub.id);
+    return view(after ?? sub);
+  });
+
+  // Révoque une annulation programmée tant que la période n'est pas terminée : le renouvellement reste prévu.
+  app.delete<{ Params: { id: string } }>(
+    "/subscriptions/:id/cancellation",
+    async (req, reply) => {
+      const accountId = await authenticate(req);
+      if (accountId === null) return reply.code(401).send({ error: "unauthorized" });
+      if (!UUID.test(req.params.id)) return reply.code(404).send({ error: "not_found" });
+
+      const sub = await subscriptions.findSubscriptionForChange(accountId, req.params.id);
+      if (!sub) return reply.code(404).send({ error: "not_found" });
+      if (sub.status !== "active") {
+        return reply.code(409).send({ error: "subscription_not_active" });
+      }
+
+      if (sub.cancelAtPeriodEnd) {
+        await subscriptions.revokeCancellation({ subscriptionId: sub.id, now: clock.now() });
+      }
+      const after = await subscriptions.findSubscriptionForChange(accountId, sub.id);
+      return view(after ?? sub);
     },
   );
 }

@@ -129,6 +129,20 @@ export interface SubscriptionRepository {
    * `null` si l'abonnement n'est pas en pause.
    */
   resume(input: { subscriptionId: string; now: Date }): Promise<ResumedInvoice | null>;
+  /** `active` → annulation programmée en fin de période (droits conservés). `false` si déjà programmée ou pas actif. */
+  scheduleCancellation(input: { subscriptionId: string; now: Date }): Promise<boolean>;
+  /** Révoque l'annulation programmée d'un abonnement `active`. `false` s'il n'y en a pas. */
+  revokeCancellation(input: { subscriptionId: string; now: Date }): Promise<boolean>;
+  /**
+   * `paused` ou `past_due` → `canceled` immédiatement ; les factures ouvertes sont annulées. `false` pour tout
+   * autre état.
+   */
+  cancelNow(input: { subscriptionId: string; now: Date }): Promise<boolean>;
+  /**
+   * `active` avec annulation programmée et période terminée → `canceled` (downgrade programmé et factures
+   * ouvertes abandonnés). Retourne leur nombre ; rejouable.
+   */
+  closeEnded(now: Date): Promise<number>;
   /** Abonnements `paused` dont `resume_at` est passé. */
   listDueResumes(now: Date, limit: number): Promise<string[]>;
   /**
