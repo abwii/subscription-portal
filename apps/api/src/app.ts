@@ -7,7 +7,9 @@ import {
 } from "./catalog.js";
 import { systemClock, type Clock } from "./clock.js";
 import { registerInvoiceRoutes, type InvoiceRepository } from "./invoices.js";
+import { generateGiftCode, registerGiftRoutes, type GiftRepository } from "./gifts.js";
 import { registerInvoicePaymentRoutes } from "./invoice-payments.js";
+import type { Mailer } from "./mailer.js";
 import { registerLifecycleRoutes } from "./lifecycle.js";
 import { registerResumeRoutes } from "./resume.js";
 import { registerPlanChangeRoutes } from "./plan-changes.js";
@@ -32,6 +34,12 @@ export interface AppOptions {
   payments?: PaymentProvider;
   /** Absent : le webhook de paiement répond 503. */
   webhookVerifier?: PaymentWebhookVerifier;
+  /** Absent : les routes de cadeaux ne sont pas montées. */
+  gifts?: GiftRepository;
+  /** Absent : aucun e-mail n'est envoyé (l'offrant retrouve le code via `GET /gifts`). */
+  mailer?: Mailer;
+  /** Générateur de codes cadeau (injectable pour les tests). */
+  giftCode?: () => string;
   clock?: Clock;
   /** Retourne l'id du compte authentifié, ou `null`. Refus par défaut. */
   authenticate?: Authenticate;
@@ -49,6 +57,9 @@ export async function buildApp({
   invoices,
   payments,
   webhookVerifier,
+  gifts,
+  mailer,
+  giftCode = generateGiftCode,
   clock = systemClock,
   authenticate = () => Promise.resolve(null),
   rateLimit: limits = { max: 100, timeWindowMs: 60_000 },
@@ -83,7 +94,17 @@ export async function buildApp({
   registerResumeRoutes(app, { subscriptions, payments, clock, authenticate });
   registerInvoicePaymentRoutes(app, { invoices, subscriptions, payments, authenticate });
   registerInvoiceRoutes(app, { invoices, authenticate });
-  registerWebhookRoutes(app, { subscriptions, verifier: webhookVerifier, clock });
+  registerWebhookRoutes(app, { subscriptions, verifier: webhookVerifier, clock, gifts, mailer });
+  if (gifts) {
+    registerGiftRoutes(app, {
+      gifts,
+      subscriptions,
+      payments,
+      clock,
+      authenticate,
+      newCode: giftCode,
+    });
+  }
 
   return app;
 }

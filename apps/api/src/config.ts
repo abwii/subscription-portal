@@ -11,6 +11,8 @@ export interface Config {
   /** Requis avec `PAYMENT_PROVIDER=stripe` (secrets Fly, jamais dans le dépôt). */
   stripeSecretKey: string | undefined;
   stripeWebhookSecret: string | undefined;
+  /** `console` : e-mails écrits sur la sortie standard, codes cadeau compris (local uniquement). */
+  mailer: "none" | "console";
 }
 
 const nonEmpty = (value: string | undefined) =>
@@ -28,6 +30,14 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
   const devAuth = env.DEV_AUTH === "true";
   if (devAuth && env.NODE_ENV === "production") {
     throw new Error("DEV_AUTH must not be enabled in production");
+  }
+
+  const mailer = env.MAILER ?? "none";
+  if (mailer !== "none" && mailer !== "console") {
+    throw new Error("MAILER must be none or console");
+  }
+  if (mailer === "console" && env.NODE_ENV === "production") {
+    throw new Error("MAILER=console must not be used in production");
   }
 
   const stripeSecretKey = nonEmpty(env.STRIPE_SECRET_KEY);
@@ -59,5 +69,6 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     paymentProvider,
     stripeSecretKey,
     stripeWebhookSecret,
+    mailer,
   };
 }

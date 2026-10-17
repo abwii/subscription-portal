@@ -63,6 +63,8 @@ export function createStripePaymentProvider({
 const EVENT_TYPES: Record<string, PaymentEvent["type"]> = {
   "payment_intent.succeeded": "payment.succeeded",
   "payment_intent.payment_failed": "payment.failed",
+  // Un remboursement porte sur une charge : le PaymentIntent est dans `payment_intent`, pas dans `id`.
+  "charge.refunded": "payment.refunded",
 };
 
 interface StripeVerifierOptions {
@@ -108,7 +110,11 @@ export function createStripeWebhookVerifier({
       });
       if (!valid) return null;
 
-      let event: { id?: unknown; type?: unknown; data?: { object?: { id?: unknown } } };
+      let event: {
+        id?: unknown;
+        type?: unknown;
+        data?: { object?: { id?: unknown; payment_intent?: unknown } };
+      };
       try {
         event = JSON.parse(rawBody) as typeof event;
       } catch {
@@ -118,7 +124,8 @@ export function createStripeWebhookVerifier({
 
       const type = EVENT_TYPES[event.type];
       if (!type) return "ignored";
-      const providerRef = event.data?.object?.id;
+      const object = event.data?.object;
+      const providerRef = type === "payment.refunded" ? object?.payment_intent : object?.id;
       if (typeof providerRef !== "string") return null;
       return { id: event.id, type, providerRef };
     },

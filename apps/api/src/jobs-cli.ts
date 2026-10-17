@@ -1,6 +1,7 @@
 import { systemClock } from "./clock.js";
 import { loadConfig } from "./config.js";
 import { createDatabase } from "./db.js";
+import { createGiftRepository } from "./gifts.pg.js";
 import { createPaymentWiring } from "./payment-wiring.js";
 import { renewDueSubscriptions } from "./renewals.js";
 import { resumeDueSubscriptions } from "./resume.js";
@@ -8,7 +9,7 @@ import { expirePendingSubscriptions } from "./subscriptions.js";
 import { createSubscriptionRepository } from "./subscriptions.pg.js";
 
 // Jobs périodiques, à planifier hors de l'API (cron, machine planifiée Fly…) :
-//   expire-pending : ferme les checkouts et changements non payés après 24 h
+//   expire-pending : ferme les checkouts, changements et cadeaux non payés après 24 h, et expire les cadeaux périmés
 //   renew          : facture les renouvellements échus
 //   resume         : reprend les abonnements dont la date de reprise est passée
 //   close-ended    : clôt les abonnements dont l'annulation programmée est arrivée à terme
@@ -21,7 +22,8 @@ const repo = createSubscriptionRepository(db);
 try {
   if (command === "expire-pending") {
     const expired = await expirePendingSubscriptions(repo, systemClock);
-    console.log(`expired: ${String(expired)}`);
+    const expiredGifts = await createGiftRepository(db).expireStale(systemClock.now());
+    console.log(`expired: ${String(expired)}, gifts past validity: ${String(expiredGifts)}`);
   } else if (command === "close-ended") {
     const closed = await repo.closeEnded(systemClock.now());
     console.log(`closed: ${String(closed)}`);
