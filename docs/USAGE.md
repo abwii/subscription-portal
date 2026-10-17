@@ -111,10 +111,16 @@ git checkout -b feat/ma-fonctionnalite
   **renouvellement** portent une ligne `discount` selon le palier (arrondi à l'entier le plus proche, moitié vers le haut). Le
   journal `xp_ledger` est append-only ; `loyalty_accounts.xp_total` en est la projection (toujours égale à la somme du journal).
   Valeurs initiales proposées dans l'ADR, à confirmer.
+- Séries : `GET /me/loyalty` renvoie aussi `streak { current, best }`. Une période compte (+1) quand la facture de son **checkout ou de
+  son renouvellement** est payée alors que l'abonnement n'était pas en retard ; les changements de plan, reprises et achats de
+  cadeaux ne comptent pas. Un paiement **rattrapé** après `past_due` (dans la grâce de 7 jours) ne casse pas la série mais ne compte
+  pas. Une **pause** la gèle. Si l'abonnement reste `past_due` au-delà de la grâce, `jobs:break-streaks` remet `current` à 0
+  (`best` est conservé). Bonus de **50 XP à chaque 3ᵉ période consécutive**, une seule fois par palier de série (une nouvelle
+  série, après une remise à zéro, regagne ses bonus). Un paiement n'est compté qu'une fois, même si son événement est rejoué.
 - Jobs périodiques (à planifier hors de l'API : cron, machine planifiée Fly — **pas encore planifiés**) :
   `pnpm --filter @subscription-portal/api jobs:renew` (facture les renouvellements échus ; au paiement la période
   avance et le downgrade programmé s'applique ; un échec passe l'abonnement en `past_due`) et `jobs:expire-pending`
-  (ferme les checkouts et changements non payés après 24 h) , `jobs:resume` (reprend les abonnements dont la date de reprise est passée) et `jobs:close-ended` (clôt les annulations programmées arrivées à terme). Tous sont rejouables. Limite : le paiement de
+  (ferme les checkouts et changements non payés après 24 h) , `jobs:resume` (reprend les abonnements dont la date de reprise est passée), `jobs:close-ended` (clôt les annulations programmées arrivées à terme) et `jobs:break-streaks` (remet à 0 les séries en retard au-delà de la grâce). Tous sont rejouables. Limite : le paiement de
   renouvellement est créé comme un checkout ; un prélèvement automatique hors session exige un moyen de paiement
   enregistré (pas dans le modèle actuel).
 - Factures : `GET /invoices` et `GET /invoices/:id` (authentifiées, limitées aux factures du compte). Une facture

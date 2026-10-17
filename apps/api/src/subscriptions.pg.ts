@@ -269,10 +269,25 @@ export function createSubscriptionRepository(
              SELECT award_xp(inv.account_id, (inv.total_cents / 100) * 10, 'invoice_paid', 'invoice',
                              inv.id, 'invoice_paid:' || inv.id, $4::timestamptz) AS awarded
              FROM inv
+           ), prev AS (
+             -- État de l'abonnement avant ce paiement (les CTE voient l'état d'avant l'instruction).
+             SELECT id, status FROM subscriptions WHERE id IN (SELECT subscription_id FROM inv)
+           ), streak AS (
+             -- Série : compte la période d'un checkout ou d'un renouvellement payé alors que l'abonnement
+             -- n'était pas en retard. Ni changement de plan, ni reprise, ni cadeau ; un paiement rattrapé
+             -- après past_due ne casse pas la série mais ne compte pas.
+             SELECT advance_streak(inv.account_id, inv.id, $4::timestamptz) AS advanced
+             FROM inv JOIN prev ON prev.id = inv.subscription_id
+             WHERE inv.subscription_id IN (SELECT id FROM sub)
+               AND ((inv.is_renewal AND prev.status = 'active')
+                    OR (NOT inv.is_renewal AND NOT inv.is_resume
+                        AND inv.target_plan_price_id IS NULL AND inv.gift_id IS NULL
+                        AND prev.status = 'pending'))
            )
            SELECT (SELECT count(*) FROM ev)::int AS recorded,
                   ((SELECT count(*) FROM sub) + (SELECT count(*) FROM gift))::int AS effects,
-                  (SELECT count(*) FROM xp)::int AS xp_awards`
+                  (SELECT count(*) FROM xp)::int AS xp_awards,
+                  (SELECT count(*) FROM streak)::int AS streak_steps`
         : `WITH ${record}, pay AS (
              UPDATE payments SET status = 'failed'
              WHERE provider_ref = $3 AND status = 'pending' AND EXISTS (SELECT 1 FROM ev)

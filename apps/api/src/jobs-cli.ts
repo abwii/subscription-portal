@@ -2,6 +2,7 @@ import { systemClock } from "./clock.js";
 import { loadConfig } from "./config.js";
 import { createDatabase } from "./db.js";
 import { createGiftRepository } from "./gifts.pg.js";
+import { createLoyaltyRepository } from "./loyalty.pg.js";
 import { createPaymentWiring } from "./payment-wiring.js";
 import { renewDueSubscriptions } from "./renewals.js";
 import { resumeDueSubscriptions } from "./resume.js";
@@ -13,6 +14,7 @@ import { createSubscriptionRepository } from "./subscriptions.pg.js";
 //   renew          : facture les renouvellements échus
 //   resume         : reprend les abonnements dont la date de reprise est passée
 //   close-ended    : clôt les abonnements dont l'annulation programmée est arrivée à terme
+//   break-streaks  : remet à 0 les séries de fidélité des abonnements en retard au-delà de la grâce
 // Tous sont rejouables sans risque (idempotents).
 const command = process.argv[2];
 const config = loadConfig(process.env);
@@ -24,6 +26,9 @@ try {
     const expired = await expirePendingSubscriptions(repo, systemClock);
     const expiredGifts = await createGiftRepository(db).expireStale(systemClock.now());
     console.log(`expired: ${String(expired)}, gifts past validity: ${String(expiredGifts)}`);
+  } else if (command === "break-streaks") {
+    const broken = await createLoyaltyRepository(db).breakExpiredStreaks(systemClock.now());
+    console.log(`streaks reset: ${String(broken)}`);
   } else if (command === "close-ended") {
     const closed = await repo.closeEnded(systemClock.now());
     console.log(`closed: ${String(closed)}`);
@@ -42,7 +47,7 @@ try {
       if (result.failed > 0) process.exitCode = 1;
     }
   } else {
-    console.error("usage: jobs-cli <expire-pending|renew|resume|close-ended>");
+    console.error("usage: jobs-cli <expire-pending|renew|resume|close-ended|break-streaks>");
     process.exitCode = 1;
   }
 } finally {
