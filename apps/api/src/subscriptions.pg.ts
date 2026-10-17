@@ -196,9 +196,13 @@ export function createSubscriptionRepository(
                           WHERE i.id IN (SELECT invoice_id FROM pay) AND i.gift_id IS NOT NULL)
                AND status IN ('awaiting_payment', 'pending')
              RETURNING id
+           ), xpr AS (
+             -- Les XP gagnés par la facture sont retirés (écriture négative, une seule fois).
+             SELECT reverse_invoice_xp(pay.invoice_id, $4::timestamptz) AS reversed FROM pay
            )
            SELECT (SELECT count(*) FROM ev)::int AS recorded,
-                  (SELECT count(*) FROM pay)::int AS effects`;
+                  (SELECT count(*) FROM pay)::int AS effects,
+                  (SELECT count(*) FROM xpr)::int AS xp_reversals`;
       const sql = event.type === "payment.refunded"
         ? refundSql
         : succeeded
@@ -217,7 +221,7 @@ export function createSubscriptionRepository(
            ), inv AS (
              UPDATE invoices SET status = 'paid', paid_at = $4::timestamptz
              WHERE id IN (SELECT invoice_id FROM pay) AND status = 'open'
-             RETURNING subscription_id, target_plan_price_id, starts_new_period, is_renewal, is_resume, gift_id
+             RETURNING subscription_id, target_plan_price_id, starts_new_period, is_renewal, is_resume, gift_id, id, account_id, total_cents
            ), sub AS (
              UPDATE subscriptions s
              SET status = 'active',
@@ -260,9 +264,15 @@ export function createSubscriptionRepository(
              WHERE id IN (SELECT gift_id FROM inv WHERE gift_id IS NOT NULL)
                AND status = 'awaiting_payment'
              RETURNING id
+           ), xp AS (
+             -- 10 XP par euro entier payé, une seule fois par facture (clé d'idempotence).
+             SELECT award_xp(inv.account_id, (inv.total_cents / 100) * 10, 'invoice_paid', 'invoice',
+                             inv.id, 'invoice_paid:' || inv.id, $4::timestamptz) AS awarded
+             FROM inv
            )
            SELECT (SELECT count(*) FROM ev)::int AS recorded,
-                  ((SELECT count(*) FROM sub) + (SELECT count(*) FROM gift))::int AS effects`
+                  ((SELECT count(*) FROM sub) + (SELECT count(*) FROM gift))::int AS effects,
+                  (SELECT count(*) FROM xp)::int AS xp_awards`
         : `WITH ${record}, pay AS (
              UPDATE payments SET status = 'failed'
              WHERE provider_ref = $3 AND status = 'pending' AND EXISTS (SELECT 1 FROM ev)
@@ -469,19 +479,35 @@ export function createSubscriptionRepository(
     async createRenewalInvoice(input) {
       try {
         const [row] = await db.query<{ invoice_id: string; total_cents: number; currency: string }>(
-          `WITH inv AS (
+          `WITH tier AS (
+             -- Remise du palier de fidélité du compte (0 sans palier).
+             SELECT COALESCE((SELECT lt.discount_bps
+                              FROM loyalty_accounts la JOIN loyalty_tiers lt ON lt.id = la.tier_id
+                              WHERE la.account_id = $1), 0) AS bps
+           ), disc AS (
+             -- Arrondi à l'entier le plus proche, moitié vers le haut.
+             SELECT bps, ((2 * $3::bigint * bps + 10000) / 20000)::int AS cents FROM tier
+           ), inv AS (
              INSERT INTO invoices
                (account_id, subscription_id, number, status, total_cents, currency, issued_at, is_renewal)
-             VALUES ($1, $2, 'INV-' || lpad(nextval('invoice_number_seq')::text, 6, '0'),
-                     'open', $3, $4, $5::timestamptz, true)
+             SELECT $1, $2, 'INV-' || lpad(nextval('invoice_number_seq')::text, 6, '0'),
+                    'open', $3::int - disc.cents, $4, $5::timestamptz, true
+             FROM disc
              RETURNING id, total_cents, currency
            ), line AS (
              INSERT INTO invoice_lines
-               (invoice_id, type, description, amount_cents, period_start, period_end)
-             SELECT inv.id, 'plan', 'Renouvellement', $3, $6::timestamptz,
+               (invoice_id, type, description, amount_cents, period_start, period_end, position)
+             SELECT inv.id, 'plan', 'Renouvellement', $3::int, $6::timestamptz,
                     $6::timestamptz + CASE $7::text WHEN 'month' THEN interval '1 month'
-                                                    ELSE interval '1 year' END
+                                                    ELSE interval '1 year' END,
+                    0
              FROM inv
+           ), discount_line AS (
+             INSERT INTO invoice_lines (invoice_id, type, description, amount_cents, position)
+             SELECT inv.id, 'discount',
+                    'Remise fidélité ' || rtrim(rtrim((disc.bps / 100.0)::numeric(5,2)::text, '0'), '.') || ' %',
+                    -disc.cents, 1
+             FROM inv, disc WHERE disc.cents > 0
            )
            SELECT id AS invoice_id, total_cents, currency FROM inv`,
           [
