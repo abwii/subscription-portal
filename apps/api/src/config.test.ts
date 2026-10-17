@@ -10,6 +10,7 @@ describe("loadConfig", () => {
       port: 3001,
       host: "0.0.0.0",
       devAuth: false,
+      trustProxy: false,
     });
   });
 
@@ -37,5 +38,10 @@ describe("loadConfig", () => {
     expect(() =>
       loadConfig({ ...valid, DEV_AUTH: "true", NODE_ENV: "production" }),
     ).toThrow(/DEV_AUTH/);
+  });
+
+  it("enables trustProxy only when TRUST_PROXY=true", () => {
+    expect(loadConfig({ ...valid, TRUST_PROXY: "true" }).trustProxy).toBe(true);
+    expect(loadConfig(valid).trustProxy).toBe(false);
   });
 });

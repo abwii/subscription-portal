@@ -51,6 +51,8 @@ git checkout -b feat/ma-fonctionnalite
   Pour appeler `GET /me/entitlements` en local : `DEV_AUTH=true` puis l'en-tête
   `X-Account-Id: 00000000-0000-4000-8000-000000000001`. `DEV_AUTH` est refusé si `NODE_ENV=production` ;
   sans lui, les routes authentifiées répondent 401 (fournisseur d'identité à choisir, voir ADR-001).
+- L'API limite le débit par IP (100 requêtes/minute, hors `/health` et `/ready`). Derrière Fly, définir
+  `TRUST_PROXY=true`, sinon tous les clients partagent l'IP du proxy.
 - `main` est protégé : tout passe par une PR dont la CI est verte.
 
 ## 3. Staging puis production

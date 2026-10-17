@@ -26,6 +26,25 @@ describe("api", () => {
     expect(res.json()).toEqual({ status: "ok" });
   });
 
+  it("rate-limits routes but never the health probes", async () => {
+    const app = await buildApp({
+      db: healthyDb,
+      catalog: { listPlans: () => Promise.resolve([]) } as unknown as CatalogRepository,
+      rateLimit: { max: 2, timeWindowMs: 60_000 },
+      logger: false,
+    });
+    apps.push(app);
+    const codes: number[] = [];
+    for (let i = 0; i < 4; i++) {
+      codes.push((await app.inject({ method: "GET", url: "/plans" })).statusCode);
+    }
+    expect(codes).toEqual([200, 200, 429, 429]);
+    for (let i = 0; i < 5; i++) {
+      expect((await app.inject({ method: "GET", url: "/health" })).statusCode).toBe(200);
+      expect((await app.inject({ method: "GET", url: "/ready" })).statusCode).toBe(200);
+    }
+  });
+
   it("GET /ready returns 200 when the database answers", async () => {
     const app = await make(healthyDb);
     const res = await app.inject({ method: "GET", url: "/ready" });

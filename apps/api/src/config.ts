@@ -4,6 +4,8 @@ export interface Config {
   host: string;
   /** Authentification de développement par en-tête `X-Account-Id`. Jamais en production. */
   devAuth: boolean;
+  /** Derrière un proxy de confiance (Fly) : l'IP cliente vient de X-Forwarded-For. */
+  trustProxy: boolean;
 }
 
 export function loadConfig(env: Record<string, string | undefined>): Config {
@@ -20,5 +22,11 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     throw new Error("DEV_AUTH must not be enabled in production");
   }
 
-  return { databaseUrl, port, host: env.HOST ?? "0.0.0.0", devAuth };
+  return {
+    databaseUrl,
+    port,
+    host: env.HOST ?? "0.0.0.0",
+    devAuth,
+    trustProxy: env.TRUST_PROXY === "true",
+  };
 }

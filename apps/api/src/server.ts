@@ -10,6 +10,7 @@ const app = await buildApp({
   db,
   catalog: createCatalogRepository(db),
   authenticate: createAuthenticate({ devAuth: config.devAuth }),
+  trustProxy: config.trustProxy,
 });
 
 async function shutdown(signal: string) {
