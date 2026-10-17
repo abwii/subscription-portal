@@ -104,6 +104,13 @@ git checkout -b feat/ma-fonctionnalite
   échangé / périmé / remboursé, 409 abonnement vivant (le cadeau reste utilisable). Limite : 10 tentatives par minute et par client,
   tous résultats confondus. Un abonnement offert ne peut être ni mis en pause, ni changé de plan, ni « dé-annulé » (409
   `gifted_subscription`) ; il peut être annulé.
+- Fidélité : `GET /me/loyalty` (XP, palier et distance au suivant). Chaque facture payée (cadeaux compris, pour l'offrant) rapporte
+  **10 XP par euro entier payé** (19,99 € → 190 XP), une seule fois par facture ; un remboursement retire ces XP (écriture
+  négative). Paliers (table `loyalty_tiers`, modifiable) : Bronze 0, Argent 500 (2 %), Or 2 000 (5 %), Platine 5 000 (10 %). Le
+  palier monte dès que le total le permet et ne descend jamais dans les 12 mois suivant son obtention. Les factures de
+  **renouvellement** portent une ligne `discount` selon le palier (arrondi à l'entier le plus proche, moitié vers le haut). Le
+  journal `xp_ledger` est append-only ; `loyalty_accounts.xp_total` en est la projection (toujours égale à la somme du journal).
+  Valeurs initiales proposées dans l'ADR, à confirmer.
 - Jobs périodiques (à planifier hors de l'API : cron, machine planifiée Fly — **pas encore planifiés**) :
   `pnpm --filter @subscription-portal/api jobs:renew` (facture les renouvellements échus ; au paiement la période
   avance et le downgrade programmé s'applique ; un échec passe l'abonnement en `past_due`) et `jobs:expire-pending`

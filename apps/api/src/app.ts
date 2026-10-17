@@ -10,6 +10,7 @@ import { systemClock, type Clock } from "./clock.js";
 import { registerInvoiceRoutes, type InvoiceRepository } from "./invoices.js";
 import { generateGiftCode, registerGiftRoutes, type GiftRepository } from "./gifts.js";
 import { registerInvoicePaymentRoutes } from "./invoice-payments.js";
+import { registerLoyaltyRoutes, type LoyaltyRepository } from "./loyalty.js";
 import type { Mailer } from "./mailer.js";
 import { registerLifecycleRoutes } from "./lifecycle.js";
 import { registerResumeRoutes } from "./resume.js";
@@ -37,6 +38,8 @@ export interface AppOptions {
   webhookVerifier?: PaymentWebhookVerifier;
   /** Absent : les routes de cadeaux ne sont pas montées. */
   gifts?: GiftRepository;
+  /** Absent : `GET /me/loyalty` n'est pas monté. */
+  loyalty?: LoyaltyRepository;
   /** Absent : aucun e-mail n'est envoyé (l'offrant retrouve le code via `GET /gifts`). */
   mailer?: Mailer;
   /** Flux de journalisation (injectable pour les tests) ; remplace `logger`. */
@@ -61,6 +64,7 @@ export async function buildApp({
   payments,
   webhookVerifier,
   gifts,
+  loyalty,
   mailer,
   giftCode = generateGiftCode,
   clock = systemClock,
@@ -99,6 +103,7 @@ export async function buildApp({
   registerInvoicePaymentRoutes(app, { invoices, subscriptions, payments, authenticate });
   registerInvoiceRoutes(app, { invoices, authenticate });
   registerWebhookRoutes(app, { subscriptions, verifier: webhookVerifier, clock, gifts, mailer });
+  if (loyalty) registerLoyaltyRoutes(app, { loyalty, authenticate });
   if (gifts) {
     registerGiftRoutes(app, {
       gifts,

@@ -5,6 +5,7 @@ import { loadConfig } from "./config.js";
 import { createDatabase } from "./db.js";
 import { createGiftRepository } from "./gifts.pg.js";
 import { createInvoiceRepository } from "./invoices.pg.js";
+import { createLoyaltyRepository } from "./loyalty.pg.js";
 import { createConsoleMailer } from "./mailer.js";
 import { createPaymentWiring } from "./payment-wiring.js";
 import { createSubscriptionRepository } from "./subscriptions.pg.js";
@@ -18,6 +19,7 @@ const app = await buildApp({
   subscriptions: createSubscriptionRepository(db),
   invoices: createInvoiceRepository(db),
   gifts: createGiftRepository(db),
+  loyalty: createLoyaltyRepository(db),
   ...(config.mailer === "console" ? { mailer: createConsoleMailer() } : {}),
   authenticate: createAuthenticate({ devAuth: config.devAuth }),
   trustProxy: config.trustProxy,
