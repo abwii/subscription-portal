@@ -8,6 +8,7 @@ import {
   type SubscriptionRef,
 } from "./catalog.js";
 import type { Clock } from "./clock.js";
+import type { SubscriptionRepository } from "./subscriptions.js";
 
 const NOW = new Date("2026-10-17T12:00:00Z");
 const clock: Clock = { now: () => NOW };
@@ -87,6 +88,7 @@ describe("catalog routes", () => {
     const app = await buildApp({
       db,
       catalog,
+      subscriptions: {} as SubscriptionRepository,
       clock,
       authenticate: () => Promise.resolve(accountId),
       logger: false,

@@ -6,6 +6,8 @@ export interface Config {
   devAuth: boolean;
   /** Derrière un proxy de confiance (Fly) : l'IP cliente vient de X-Forwarded-For. */
   trustProxy: boolean;
+  /** `fake` : fournisseur factice local. `none` : le checkout répond 503 (fournisseur à choisir). */
+  paymentProvider: "none" | "fake";
 }
 
 export function loadConfig(env: Record<string, string | undefined>): Config {
@@ -22,11 +24,20 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     throw new Error("DEV_AUTH must not be enabled in production");
   }
 
+  const paymentProvider = env.PAYMENT_PROVIDER ?? "none";
+  if (paymentProvider !== "none" && paymentProvider !== "fake") {
+    throw new Error("PAYMENT_PROVIDER must be none or fake");
+  }
+  if (paymentProvider === "fake" && env.NODE_ENV === "production") {
+    throw new Error("PAYMENT_PROVIDER=fake must not be used in production");
+  }
+
   return {
     databaseUrl,
     port,
     host: env.HOST ?? "0.0.0.0",
     devAuth,
     trustProxy: env.TRUST_PROXY === "true",
+    paymentProvider,
   };
 }
