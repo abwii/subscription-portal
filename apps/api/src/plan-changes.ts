@@ -22,6 +22,8 @@ export interface SubscriptionForChange {
   /** Prix visé par un downgrade programmé, appliqué au prochain renouvellement. */
   pendingPlanPriceId: string | null;
   cancelAtPeriodEnd: boolean;
+  /** Abonnement issu d'un cadeau : jamais facturé, ni mis en pause, ni changé, ni renouvelé. */
+  giftId: string | null;
 }
 
 export interface CreateChangeInvoiceInput {
@@ -61,6 +63,7 @@ type ChangeResult =
       kind:
         | "not_found"
         | "not_active"
+        | "gifted"
         | "price_unavailable"
         | "currency_mismatch"
         | "same_plan"
@@ -106,6 +109,7 @@ async function changePlan(
 
   const sub = await repo.findSubscriptionForChange(input.accountId, input.subscriptionId);
   if (!sub) return { kind: "not_found" };
+  if (sub.giftId) return { kind: "gifted" };
 
   const existing = await repo.findChangeByIdempotencyKey(
     input.accountId,
@@ -225,6 +229,8 @@ export function registerPlanChangeRoutes(
       switch (result.kind) {
         case "not_found":
           return reply.code(404).send({ error: "not_found" });
+        case "gifted":
+          return reply.code(409).send({ error: "gifted_subscription" });
         case "not_active":
           return reply.code(409).send({ error: "subscription_not_active" });
         case "change_in_progress":

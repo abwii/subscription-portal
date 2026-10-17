@@ -29,6 +29,7 @@ const sub: SubscriptionForChange = {
   periodEnd: new Date(NOW.getTime() + 15 * DAY),
   pendingPlanPriceId: null,
   cancelAtPeriodEnd: false,
+  giftId: null,
 };
 
 const basicPrice: PlanPriceRef = {

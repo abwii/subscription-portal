@@ -26,6 +26,7 @@ const paused: SubscriptionForChange = {
   periodEnd: new Date(NOW.getTime() - 10 * DAY),
   pendingPlanPriceId: null,
   cancelAtPeriodEnd: false,
+  giftId: null,
 };
 
 const resumed = (subscriptionId = SUB_ID): ResumedInvoice => ({
