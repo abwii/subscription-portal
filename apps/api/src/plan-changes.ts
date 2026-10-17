@@ -21,6 +21,7 @@ export interface SubscriptionForChange {
   periodEnd: Date;
   /** Prix visé par un downgrade programmé, appliqué au prochain renouvellement. */
   pendingPlanPriceId: string | null;
+  cancelAtPeriodEnd: boolean;
 }
 
 export interface CreateChangeInvoiceInput {

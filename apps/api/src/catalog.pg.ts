@@ -5,6 +5,7 @@ interface SubscriptionRow {
   status: "pending" | "active" | "past_due" | "paused" | "canceled" | "expired";
   plan_id: string;
   current_period_end: Date;
+  cancel_at_period_end: boolean;
 }
 
 export function createCatalogRepository(db: Queryable): CatalogRepository {
@@ -31,7 +32,7 @@ export function createCatalogRepository(db: Queryable): CatalogRepository {
 
     async findSubscription(accountId) {
       const [row] = await db.query<SubscriptionRow>(
-        `SELECT s.status, pp.plan_id, s.current_period_end
+        `SELECT s.status, pp.plan_id, s.current_period_end, s.cancel_at_period_end
          FROM subscriptions s JOIN plan_prices pp ON pp.id = s.plan_price_id
          WHERE s.account_id = $1
            AND s.status IN ('pending', 'active', 'past_due', 'paused')`,
@@ -42,6 +43,7 @@ export function createCatalogRepository(db: Queryable): CatalogRepository {
             status: row.status,
             planId: row.plan_id,
             currentPeriodEnd: row.current_period_end,
+            cancelAtPeriodEnd: row.cancel_at_period_end,
           }
         : null;
     },

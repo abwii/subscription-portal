@@ -23,6 +23,7 @@ const sub: SubscriptionForChange = {
   periodStart: new Date(NOW.getTime() - 15 * DAY),
   periodEnd: new Date(NOW.getTime() + 15 * DAY),
   pendingPlanPriceId: null,
+  cancelAtPeriodEnd: false,
 };
 
 const inDays = (n: number) => new Date(NOW.getTime() + n * DAY).toISOString();

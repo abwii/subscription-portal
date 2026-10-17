@@ -38,6 +38,8 @@ export interface SubscriptionRef {
   status: SubscriptionStatus;
   planId: string;
   currentPeriodEnd: Date;
+  /** Annulation programmée : les droits s'arrêtent à `currentPeriodEnd`. */
+  cancelAtPeriodEnd: boolean;
 }
 
 /** Port de lecture du catalogue : l'implémentation SQL est dans `catalog.pg.ts`. */
@@ -57,7 +59,10 @@ const GRACE_PERIOD_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** ADR-001 : `active` accorde les droits ; `past_due` les garde 7 jours après la fin de période. */
 export function grantsEntitlements(sub: SubscriptionRef, now: Date): boolean {
-  if (sub.status === "active") return true;
+  if (sub.status === "active") {
+    // Annulation programmée : les droits s'arrêtent à la fin de la période, sans attendre le job de clôture.
+    return !sub.cancelAtPeriodEnd || now.getTime() < sub.currentPeriodEnd.getTime();
+  }
   if (sub.status === "past_due") {
     return now.getTime() < sub.currentPeriodEnd.getTime() + GRACE_PERIOD_MS;
   }

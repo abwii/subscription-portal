@@ -271,6 +271,7 @@ export function createSubscriptionRepository(
         status: SubscriptionForChange["status"];
         plan_price_id: string;
         pending_plan_price_id: string | null;
+        cancel_at_period_end: boolean;
         plan_id: string;
         rank: number;
         interval: SubscriptionForChange["interval"];
@@ -279,7 +280,8 @@ export function createSubscriptionRepository(
         current_period_start: Date;
         current_period_end: Date;
       }>(
-        `SELECT s.id, s.status, s.plan_price_id, s.pending_plan_price_id, p.id AS plan_id, p.rank, pp."interval",
+        `SELECT s.id, s.status, s.plan_price_id, s.pending_plan_price_id, s.cancel_at_period_end,
+                p.id AS plan_id, p.rank, pp."interval",
                 pp.amount_cents, pp.currency, s.current_period_start, s.current_period_end
          FROM subscriptions s
          JOIN plan_prices pp ON pp.id = s.plan_price_id
@@ -300,6 +302,7 @@ export function createSubscriptionRepository(
             periodStart: row.current_period_start,
             periodEnd: row.current_period_end,
             pendingPlanPriceId: row.pending_plan_price_id,
+            cancelAtPeriodEnd: row.cancel_at_period_end,
           }
         : null;
     },
@@ -559,6 +562,90 @@ export function createSubscriptionRepository(
             currency: row.currency.trim(),
           }
         : null;
+    },
+
+    async scheduleCancellation({ subscriptionId, now }) {
+      const [row] = await db.query<{ changed: number }>(
+        `WITH s AS (
+           UPDATE subscriptions SET cancel_at_period_end = true
+           WHERE id = $1 AND status = 'active' AND NOT cancel_at_period_end
+           RETURNING id
+         ), ev AS (
+           INSERT INTO subscription_events (subscription_id, type, data, created_at)
+           SELECT id, 'cancel_scheduled', '{}'::jsonb, $2::timestamptz FROM s
+         )
+         SELECT count(*)::int AS changed FROM s`,
+        [subscriptionId, now],
+      );
+      return (row?.changed ?? 0) > 0;
+    },
+
+    async revokeCancellation({ subscriptionId, now }) {
+      const [row] = await db.query<{ changed: number }>(
+        `WITH s AS (
+           UPDATE subscriptions SET cancel_at_period_end = false
+           WHERE id = $1 AND status = 'active' AND cancel_at_period_end
+           RETURNING id
+         ), ev AS (
+           INSERT INTO subscription_events (subscription_id, type, data, created_at)
+           SELECT id, 'cancel_revoked', '{}'::jsonb, $2::timestamptz FROM s
+         )
+         SELECT count(*)::int AS changed FROM s`,
+        [subscriptionId, now],
+      );
+      return (row?.changed ?? 0) > 0;
+    },
+
+    async cancelNow({ subscriptionId, now }) {
+      const [row] = await db.query<{ changed: number }>(
+        `WITH s AS (
+           UPDATE subscriptions
+           SET status = 'canceled', paused_at = NULL, resume_at = NULL,
+               pending_plan_price_id = NULL, cancel_at_period_end = false
+           WHERE id = $1 AND status IN ('paused', 'past_due')
+           RETURNING id
+         ), inv AS (
+           UPDATE invoices SET status = 'void'
+           WHERE subscription_id IN (SELECT id FROM s) AND status = 'open'
+           RETURNING id
+         ), pay AS (
+           UPDATE payments SET status = 'failed'
+           WHERE invoice_id IN (SELECT id FROM inv) AND status = 'pending'
+           RETURNING id
+         ), ev AS (
+           INSERT INTO subscription_events (subscription_id, type, data, created_at)
+           SELECT id, 'canceled', '{"reason":"user_request"}'::jsonb, $2::timestamptz FROM s
+         )
+         SELECT count(*)::int AS changed FROM s`,
+        [subscriptionId, now],
+      );
+      return (row?.changed ?? 0) > 0;
+    },
+
+    async closeEnded(now) {
+      const [row] = await db.query<{ closed: number }>(
+        `WITH s AS (
+           UPDATE subscriptions
+           SET status = 'canceled', pending_plan_price_id = NULL, cancel_at_period_end = false
+           WHERE status = 'active' AND cancel_at_period_end
+             AND current_period_end <= $1::timestamptz
+           RETURNING id
+         ), inv AS (
+           UPDATE invoices SET status = 'void'
+           WHERE subscription_id IN (SELECT id FROM s) AND status = 'open'
+           RETURNING id
+         ), pay AS (
+           UPDATE payments SET status = 'failed'
+           WHERE invoice_id IN (SELECT id FROM inv) AND status = 'pending'
+           RETURNING id
+         ), ev AS (
+           INSERT INTO subscription_events (subscription_id, type, data, created_at)
+           SELECT id, 'canceled', '{"reason":"period_end"}'::jsonb, $1::timestamptz FROM s
+         )
+         SELECT count(*)::int AS closed FROM s`,
+        [now],
+      );
+      return row?.closed ?? 0;
     },
 
     async listDueResumes(now, limit) {

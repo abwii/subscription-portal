@@ -11,6 +11,7 @@ import { createSubscriptionRepository } from "./subscriptions.pg.js";
 //   expire-pending : ferme les checkouts et changements non payés après 24 h
 //   renew          : facture les renouvellements échus
 //   resume         : reprend les abonnements dont la date de reprise est passée
+//   close-ended    : clôt les abonnements dont l'annulation programmée est arrivée à terme
 // Tous sont rejouables sans risque (idempotents).
 const command = process.argv[2];
 const config = loadConfig(process.env);
@@ -21,6 +22,9 @@ try {
   if (command === "expire-pending") {
     const expired = await expirePendingSubscriptions(repo, systemClock);
     console.log(`expired: ${String(expired)}`);
+  } else if (command === "close-ended") {
+    const closed = await repo.closeEnded(systemClock.now());
+    console.log(`closed: ${String(closed)}`);
   } else if (command === "renew" || command === "resume") {
     const { payments } = createPaymentWiring(config);
     if (!payments) {
@@ -36,7 +40,7 @@ try {
       if (result.failed > 0) process.exitCode = 1;
     }
   } else {
-    console.error("usage: jobs-cli <expire-pending|renew|resume>");
+    console.error("usage: jobs-cli <expire-pending|renew|resume|close-ended>");
     process.exitCode = 1;
   }
 } finally {
