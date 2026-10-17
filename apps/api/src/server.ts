@@ -1,22 +1,52 @@
-import { buildApp } from "./app.js";
+import { buildApp, type AppOptions } from "./app.js";
 import { createAuthenticate } from "./auth.js";
 import { createCatalogRepository } from "./catalog.pg.js";
 import { loadConfig } from "./config.js";
 import { createDatabase } from "./db.js";
-import { createFakePaymentProvider } from "./payments.js";
+import { createInvoiceRepository } from "./invoices.pg.js";
+import {
+  createFakePaymentProvider,
+  createFakeWebhookVerifier,
+} from "./payments.js";
+import {
+  createStripePaymentProvider,
+  createStripeWebhookVerifier,
+} from "./stripe.js";
 import { createSubscriptionRepository } from "./subscriptions.pg.js";
 
 const config = loadConfig(process.env);
 const db = createDatabase(config.databaseUrl);
+
+const payment: Pick<AppOptions, "payments" | "webhookVerifier"> = (() => {
+  switch (config.paymentProvider) {
+    case "stripe":
+      return {
+        // loadConfig garantit la présence des deux secrets avec PAYMENT_PROVIDER=stripe.
+        payments: createStripePaymentProvider({
+          secretKey: config.stripeSecretKey ?? "",
+        }),
+        webhookVerifier: createStripeWebhookVerifier({
+          secret: config.stripeWebhookSecret ?? "",
+        }),
+      };
+    case "fake":
+      return {
+        payments: createFakePaymentProvider(),
+        webhookVerifier: createFakeWebhookVerifier(),
+      };
+    case "none":
+      return {};
+  }
+})();
+
 const app = await buildApp({
   db,
   catalog: createCatalogRepository(db),
   subscriptions: createSubscriptionRepository(db),
-  ...(config.paymentProvider === "fake"
-    ? { payments: createFakePaymentProvider() }
-    : {}),
+  invoices: createInvoiceRepository(db),
   authenticate: createAuthenticate({ devAuth: config.devAuth }),
   trustProxy: config.trustProxy,
+  ...payment,
 });
 
 async function shutdown(signal: string) {

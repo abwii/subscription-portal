@@ -60,4 +60,23 @@ describe("loadConfig", () => {
       loadConfig({ ...valid, PAYMENT_PROVIDER: "fake", NODE_ENV: "production" }),
     ).toThrow(/PAYMENT_PROVIDER/);
   });
+
+  it("requires both Stripe secrets with PAYMENT_PROVIDER=stripe", () => {
+    const stripe = { ...valid, PAYMENT_PROVIDER: "stripe" };
+    expect(() => loadConfig(stripe)).toThrow(/STRIPE_SECRET_KEY/);
+    expect(() => loadConfig({ ...stripe, STRIPE_SECRET_KEY: "sk_test_x" })).toThrow(
+      /STRIPE_WEBHOOK_SECRET/,
+    );
+    const config = loadConfig({
+      ...stripe,
+      STRIPE_SECRET_KEY: "sk_test_x",
+      STRIPE_WEBHOOK_SECRET: "whsec_x",
+      NODE_ENV: "production",
+    });
+    expect(config).toMatchObject({
+      paymentProvider: "stripe",
+      stripeSecretKey: "sk_test_x",
+      stripeWebhookSecret: "whsec_x",
+    });
+  });
 });

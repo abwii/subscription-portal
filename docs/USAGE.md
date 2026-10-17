@@ -57,6 +57,14 @@ git checkout -b feat/ma-fonctionnalite
   sans fournisseur de paiement (`PAYMENT_PROVIDER=none`, défaut) l'API répond 503 ; en local, `PAYMENT_PROVIDER=fake`
   (refusé en production). Les abonnements `pending` non payés expirent après 24 h via
   `expirePendingSubscriptions` (`apps/api/src/subscriptions.ts`) : **cette fonction n'est pas encore planifiée**.
+- Stripe : `PAYMENT_PROVIDER=stripe` exige `STRIPE_SECRET_KEY` et `STRIPE_WEBHOOK_SECRET` (secrets Fly en production,
+  clés de test en local ; jamais dans le dépôt). Le webhook est `POST /webhooks/payments` (événements
+  `payment_intent.succeeded` et `payment_intent.payment_failed` ; les autres sont acquittés et ignorés). En local :
+  `stripe listen --forward-to localhost:3001/webhooks/payments` fournit le secret `whsec_…`. Avec `PAYMENT_PROVIDER=fake`,
+  simuler un événement par `POST /webhooks/payments` avec l'en-tête `x-fake-signature: fake` et le corps
+  `{ "id": "evt_1", "type": "payment.succeeded", "providerRef": "<providerRef du checkout>" }`.
+- Factures : `GET /invoices` et `GET /invoices/:id` (authentifiées, limitées aux factures du compte). Une facture
+  émise est immuable (trigger SQL) : seuls son statut et sa date de paiement changent.
 - Tests d'intégration SQL (`*.pg.test.ts`) : exécutés par la CI (service Postgres) ; en local, ignorés sans `TEST_DATABASE_URL`. Pointer vers une base **jetable**
   (les tables sont vidées), p. ex. `docker run --rm -e POSTGRES_PASSWORD=local -e POSTGRES_DB=t -p 127.0.0.1:55432:5432 postgres:17-alpine`
   puis `TEST_DATABASE_URL=postgres://postgres:local@127.0.0.1:55432/t pnpm --filter @subscription-portal/api test`.

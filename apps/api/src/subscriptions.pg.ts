@@ -144,31 +144,59 @@ export function createSubscriptionRepository(
       );
     },
 
-    async activateByProviderRef(providerRef, paidAt) {
-      const [row] = await db.query<{ activated: number }>(
-        `WITH pay AS (
-           UPDATE payments SET status = 'succeeded'
-           WHERE provider_ref = $1 AND status = 'pending'
-           RETURNING invoice_id
-         ), inv AS (
-           UPDATE invoices SET status = 'paid', paid_at = $2::timestamptz
-           WHERE id IN (SELECT invoice_id FROM pay) AND status = 'open'
-           RETURNING subscription_id
-         ), sub AS (
-           UPDATE subscriptions s
-           SET status = 'active',
-               current_period_start = $2::timestamptz,
-               current_period_end = $2::timestamptz + CASE pp."interval"
-                 WHEN 'month' THEN interval '1 month' ELSE interval '1 year' END
-           FROM plan_prices pp
-           WHERE s.id IN (SELECT subscription_id FROM inv)
-             AND s.status = 'pending' AND pp.id = s.plan_price_id
-           RETURNING s.id
-         )
-         SELECT count(*)::int AS activated FROM sub`,
-        [providerRef, paidAt],
-      );
-      return (row?.activated ?? 0) > 0;
+    async applyPaymentEvent(event, now) {
+      // $1 id d'événement, $2 type, $3 référence du paiement, $4 date. L'événement et son effet
+      // sont dans la même requête : soit tout est écrit, soit rien (le fournisseur rejoue).
+      const record = `ev AS (
+           INSERT INTO payment_events (provider_event_id, type, provider_ref, received_at)
+           VALUES ($1, $2, $3, $4::timestamptz)
+           ON CONFLICT (provider_event_id) DO NOTHING
+           RETURNING 1
+         )`;
+      const succeeded = event.type === "payment.succeeded";
+      const sql = succeeded
+        ? `WITH ${record}, pay AS (
+             UPDATE payments SET status = 'succeeded'
+             WHERE provider_ref = $3 AND status = 'pending' AND EXISTS (SELECT 1 FROM ev)
+             RETURNING invoice_id
+           ), inv AS (
+             UPDATE invoices SET status = 'paid', paid_at = $4::timestamptz
+             WHERE id IN (SELECT invoice_id FROM pay) AND status = 'open'
+             RETURNING subscription_id
+           ), sub AS (
+             UPDATE subscriptions s
+             SET status = 'active',
+                 current_period_start = $4::timestamptz,
+                 current_period_end = $4::timestamptz + CASE pp."interval"
+                   WHEN 'month' THEN interval '1 month' ELSE interval '1 year' END
+             FROM plan_prices pp
+             WHERE s.id IN (SELECT subscription_id FROM inv)
+               AND s.status = 'pending' AND pp.id = s.plan_price_id
+             RETURNING s.id
+           )
+           SELECT (SELECT count(*) FROM ev)::int AS recorded,
+                  (SELECT count(*) FROM sub)::int AS effects`
+        : `WITH ${record}, pay AS (
+             UPDATE payments SET status = 'failed'
+             WHERE provider_ref = $3 AND status = 'pending' AND EXISTS (SELECT 1 FROM ev)
+             RETURNING invoice_id
+           ), sub AS (
+             UPDATE subscriptions s SET status = 'past_due'
+             FROM invoices i
+             WHERE i.id IN (SELECT invoice_id FROM pay)
+               AND s.id = i.subscription_id AND s.status = 'active'
+             RETURNING s.id
+           )
+           SELECT (SELECT count(*) FROM ev)::int AS recorded,
+                  (SELECT count(*) FROM pay)::int AS effects`;
+      const [row] = await db.query<{ recorded: number; effects: number }>(sql, [
+        event.id,
+        event.type,
+        event.providerRef,
+        now,
+      ]);
+      if (!row || row.recorded === 0) return "duplicate";
+      return row.effects > 0 ? "applied" : "unmatched";
     },
 
     async expirePending(createdBefore) {

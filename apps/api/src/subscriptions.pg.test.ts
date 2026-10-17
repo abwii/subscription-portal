@@ -2,6 +2,8 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createDatabase, type PgDatabase } from "./db.js";
 import { runMigrations } from "./migrate.js";
+import type { PaymentEvent } from "./payments.js";
+import { createInvoiceRepository } from "./invoices.pg.js";
 import {
   DuplicateIdempotencyKeyError,
   LiveSubscriptionExistsError,
@@ -11,6 +13,12 @@ import { createSubscriptionRepository } from "./subscriptions.pg.js";
 // Test d'intégration : exécuté seulement si TEST_DATABASE_URL pointe vers une base jetable
 // (ses tables sont vidées à chaque test). Ex. : postgres://postgres:local@127.0.0.1:55432/t
 const url = process.env.TEST_DATABASE_URL;
+
+const evt = (
+  id: string,
+  type: PaymentEvent["type"],
+  providerRef: string,
+): PaymentEvent => ({ id, type, providerRef });
 
 describe.skipIf(!url)("subscription repository (Postgres)", () => {
   let db: PgDatabase;
@@ -30,7 +38,7 @@ describe.skipIf(!url)("subscription repository (Postgres)", () => {
   });
   beforeEach(async () => {
     await db.query(
-      `TRUNCATE payments, invoice_lines, invoices, subscriptions,
+      `TRUNCATE payment_events, payments, invoice_lines, invoices, subscriptions,
          plan_entitlements, entitlements, plan_prices, plans, accounts CASCADE`,
     );
     await db.query(`INSERT INTO accounts (id, email) VALUES ($1, 'a@example.test')`, [
@@ -98,8 +106,10 @@ describe.skipIf(!url)("subscription repository (Postgres)", () => {
     await repo.recordPayment(record.invoiceId, "pi_1", 1999); // rejeu : sans effet
     const paidAt = new Date("2026-10-17T12:30:00Z");
 
-    expect(await repo.activateByProviderRef("pi_1", paidAt)).toBe(true);
-    expect(await repo.activateByProviderRef("pi_1", paidAt)).toBe(false);
+    expect(await repo.applyPaymentEvent(evt("e1", "payment.succeeded", "pi_1"), paidAt)).toBe("applied");
+    // même événement rejoué : sans effet ; autre événement sur un paiement déjà traité : sans correspondance
+    expect(await repo.applyPaymentEvent(evt("e1", "payment.succeeded", "pi_1"), paidAt)).toBe("duplicate");
+    expect(await repo.applyPaymentEvent(evt("e2", "payment.succeeded", "pi_1"), paidAt)).toBe("unmatched");
 
     const [sub] = await db.query<{
       status: string;
@@ -137,7 +147,7 @@ describe.skipIf(!url)("subscription repository (Postgres)", () => {
     );
     expect(sub?.status).toBe("expired");
     expect(inv?.status).toBe("void");
-    expect(await repo.activateByProviderRef("pi_old", t0)).toBe(false);
+    expect(await repo.applyPaymentEvent(evt("e3", "payment.succeeded", "pi_old"), t0)).toBe("unmatched");
     // le compte peut de nouveau souscrire
     await expect(create("new")).resolves.toMatchObject({ status: "pending" });
   });
@@ -149,5 +159,96 @@ describe.skipIf(!url)("subscription repository (Postgres)", () => {
         new Date("2026-10-16T12:00:00Z"),
       ),
     ).toBe(0);
+  });
+
+  it("records a webhook event once and applies its effect once", async () => {
+    const repo = createSubscriptionRepository(db);
+    const record = await create();
+    await repo.recordPayment(record.invoiceId, "pi_1", 1999);
+    await repo.applyPaymentEvent(evt("evt_a", "payment.succeeded", "pi_1"), t0);
+    await repo.applyPaymentEvent(evt("evt_a", "payment.succeeded", "pi_1"), t0);
+    const events = await db.query<{ provider_event_id: string }>(
+      `SELECT provider_event_id FROM payment_events`,
+    );
+    expect(events).toEqual([{ provider_event_id: "evt_a" }]);
+  });
+
+  it("moves an active subscription to past_due when its payment fails, keeping the invoice open", async () => {
+    const repo = createSubscriptionRepository(db);
+    const record = await create();
+    await repo.recordPayment(record.invoiceId, "pi_1", 1999);
+    await repo.applyPaymentEvent(evt("e1", "payment.succeeded", "pi_1"), t0);
+    // renouvellement : nouvelle facture ouverte + paiement
+    const [renewal] = await db.query<{ id: string }>(
+      `INSERT INTO invoices (account_id, subscription_id, number, status, total_cents, currency, issued_at)
+       VALUES ($1, $2, 'INV-RENEW', 'open', 1999, 'EUR', $3) RETURNING id`,
+      [accountId, record.subscriptionId, t0],
+    );
+    await repo.recordPayment(renewal?.id ?? "", "pi_2", 1999);
+
+    expect(await repo.applyPaymentEvent(evt("e2", "payment.failed", "pi_2"), t0)).toBe("applied");
+
+    const [sub] = await db.query<{ status: string }>(
+      `SELECT status FROM subscriptions WHERE id = $1`,
+      [record.subscriptionId],
+    );
+    const [pay] = await db.query<{ status: string }>(
+      `SELECT status FROM payments WHERE provider_ref = 'pi_2'`,
+    );
+    expect(sub?.status).toBe("past_due");
+    expect(pay?.status).toBe("failed");
+  });
+
+  it("keeps a pending subscription pending when its first payment fails (the customer can retry)", async () => {
+    const repo = createSubscriptionRepository(db);
+    const record = await create();
+    await repo.recordPayment(record.invoiceId, "pi_1", 1999);
+    expect(await repo.applyPaymentEvent(evt("e1", "payment.failed", "pi_1"), t0)).toBe("applied");
+    const [sub] = await db.query<{ status: string }>(
+      `SELECT status FROM subscriptions WHERE id = $1`,
+      [record.subscriptionId],
+    );
+    expect(sub?.status).toBe("pending");
+  });
+
+  it("reports an unknown payment as unmatched but still records the event", async () => {
+    const repo = createSubscriptionRepository(db);
+    expect(await repo.applyPaymentEvent(evt("e9", "payment.succeeded", "pi_nope"), t0)).toBe("unmatched");
+    expect(await repo.applyPaymentEvent(evt("e9", "payment.succeeded", "pi_nope"), t0)).toBe("duplicate");
+  });
+
+  it("forbids editing a non-draft invoice and its lines, but allows status changes", async () => {
+    const record = await create();
+    await expect(
+      db.query(`UPDATE invoices SET total_cents = 1 WHERE id = $1`, [record.invoiceId]),
+    ).rejects.toThrow(/immutable/);
+    await expect(
+      db.query(`UPDATE invoice_lines SET amount_cents = 1 WHERE invoice_id = $1`, [record.invoiceId]),
+    ).rejects.toThrow(/immutable/);
+    await expect(
+      db.query(`DELETE FROM invoice_lines WHERE invoice_id = $1`, [record.invoiceId]),
+    ).rejects.toThrow(/immutable/);
+    await expect(
+      db.query(`DELETE FROM invoices WHERE id = $1`, [record.invoiceId]),
+    ).rejects.toThrow(/immutable/);
+    await db.query(`UPDATE invoices SET status = 'void' WHERE id = $1`, [record.invoiceId]);
+  });
+
+  it("lists invoices of one account only and hides other accounts' invoices", async () => {
+    const invoices = createInvoiceRepository(db);
+    const record = await create();
+    const other = "00000000-0000-4000-8000-0000000000bb";
+    await db.query(`INSERT INTO accounts (id, email) VALUES ($1, 'b@example.test')`, [other]);
+
+    const mine = await invoices.listInvoices(accountId);
+    expect(mine.map((i) => i.id)).toEqual([record.invoiceId]);
+    expect(mine[0]).toMatchObject({ status: "open", totalCents: 1999, currency: "EUR", paidAt: null });
+    expect(await invoices.listInvoices(other)).toEqual([]);
+
+    const detail = await invoices.findInvoice(accountId, record.invoiceId);
+    expect(detail?.lines).toEqual([
+      { type: "plan", description: "Abonnement", amountCents: 1999, periodStart: null, periodEnd: null },
+    ]);
+    expect(await invoices.findInvoice(other, record.invoiceId)).toBeNull();
   });
 });
