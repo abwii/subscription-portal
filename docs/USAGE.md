@@ -73,6 +73,10 @@ git checkout -b feat/ma-fonctionnalite
   plan) ne facture rien et ne rembourse rien : il programme le changement (`pending_plan_price_id`, réponse
   `scheduledChange`) pour la fin de période ; les droits actuels restent. `DELETE /subscriptions/:id/scheduled-change`
   l'annule (204, idempotent) ; demander un upgrade l'annule aussi.
+- Pause : `POST /subscriptions/:id/pause` avec `{ "resumeAt": "<date ISO>" }` (dans le futur, 90 jours maximum, une seule pause
+  par période de 12 mois, abonnement `active` uniquement, aucune facture de renouvellement ou de changement impayée).
+  La facturation et les droits sont suspendus ; la période en cours n'est ni remboursée ni reportée (ADR-001 : à la
+  reprise une nouvelle période démarre). Chaque pause est journalisée dans `subscription_events` (append-only).
 - Jobs périodiques (à planifier hors de l'API : cron, machine planifiée Fly — **pas encore planifiés**) :
   `pnpm --filter @subscription-portal/api jobs:renew` (facture les renouvellements échus ; au paiement la période
   avance et le downgrade programmé s'applique ; un échec passe l'abonnement en `past_due`) et `jobs:expire-pending`

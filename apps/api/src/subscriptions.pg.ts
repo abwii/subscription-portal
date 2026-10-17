@@ -475,6 +475,40 @@ export function createSubscriptionRepository(
       }
     },
 
+    async countPausesSince(subscriptionId, since) {
+      const [row] = await db.query<{ count: number }>(
+        `SELECT count(*)::int AS count FROM subscription_events
+         WHERE subscription_id = $1 AND type = 'paused' AND created_at >= $2::timestamptz`,
+        [subscriptionId, since],
+      );
+      return row?.count ?? 0;
+    },
+
+    async pause({ subscriptionId, now, resumeAt }) {
+      const [row] = await db.query<{ paused: number }>(
+        `WITH s AS (
+           UPDATE subscriptions
+           SET status = 'paused', paused_at = $2::timestamptz, resume_at = $3::timestamptz
+           WHERE id = $1 AND status = 'active'
+             AND NOT EXISTS (
+               SELECT 1 FROM invoices i
+               WHERE i.subscription_id = $1 AND i.status = 'open'
+                 AND (i.is_renewal OR i.target_plan_price_id IS NOT NULL))
+           RETURNING id
+         ), ev AS (
+           INSERT INTO subscription_events (subscription_id, type, data, created_at)
+           SELECT id, 'paused',
+                  jsonb_build_object('resumeAt', to_char($3::timestamptz AT TIME ZONE 'UTC',
+                                                         'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
+                  $2::timestamptz
+           FROM s
+         )
+         SELECT count(*)::int AS paused FROM s`,
+        [subscriptionId, now, resumeAt],
+      );
+      return (row?.paused ?? 0) > 0;
+    },
+
     async expirePending(createdBefore) {
       const [row] = await db.query<{ expired: number }>(
         `WITH sub AS (
