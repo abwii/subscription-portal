@@ -115,6 +115,13 @@ export interface SubscriptionRepository {
   createRenewalInvoice(
     input: CreateRenewalInvoiceInput,
   ): Promise<RenewalInvoice | null>;
+  /** Nombre de pauses de l'abonnement depuis `since` (quota : une pause par 12 mois). */
+  countPausesSince(subscriptionId: string, since: Date): Promise<number>;
+  /**
+   * Passe un abonnement `active` en `paused` (facturation et droits suspendus) et journalise l'événement.
+   * `false` s'il n'est pas actif ou si une facture de renouvellement / changement attend son paiement.
+   */
+  pause(input: { subscriptionId: string; now: Date; resumeAt: Date }): Promise<boolean>;
   /**
    * Ferme ce qui n'a pas été payé à temps : `pending` créés avant `createdBefore` → `expired`, et
    * demandes de changement ouvertes émises avant `createdBefore`. Factures `void`. Retourne le nombre

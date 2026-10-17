@@ -34,7 +34,7 @@ describe.skipIf(!url)("downgrades and renewals (Postgres)", () => {
   });
   beforeEach(async () => {
     await db.query(
-      `TRUNCATE payment_events, payments, invoice_lines, invoices, subscriptions,
+      `TRUNCATE subscription_events, payment_events, payments, invoice_lines, invoices, subscriptions,
          plan_entitlements, entitlements, plan_prices, plans, accounts CASCADE`,
     );
     await db.query(`INSERT INTO accounts (id, email) VALUES ($1, 'a@example.test')`, [accountId]);

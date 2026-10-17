@@ -59,6 +59,8 @@ function fakeRepo(over: Partial<SubscriptionRepository> = {}) {
     clearScheduledChange: () => Promise.resolve("none"),
     listDueRenewals: () => Promise.resolve([]),
     createRenewalInvoice: () => Promise.resolve(null),
+    countPausesSince: () => Promise.resolve(0),
+    pause: () => Promise.resolve(true),
     expirePending: () => Promise.resolve(0),
     ...over,
   };
