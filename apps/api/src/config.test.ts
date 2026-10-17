@@ -12,6 +12,7 @@ describe("loadConfig", () => {
       devAuth: false,
       trustProxy: false,
       paymentProvider: "none",
+      mailer: "none",
     });
   });
 
@@ -78,5 +79,14 @@ describe("loadConfig", () => {
       stripeSecretKey: "sk_test_x",
       stripeWebhookSecret: "whsec_x",
     });
+  });
+
+  it("selects the mailer with MAILER and refuses the console mailer in production", () => {
+    expect(loadConfig(valid).mailer).toBe("none");
+    expect(loadConfig({ ...valid, MAILER: "console" }).mailer).toBe("console");
+    expect(() => loadConfig({ ...valid, MAILER: "smtp" })).toThrow(/MAILER/);
+    expect(() => loadConfig({ ...valid, MAILER: "console", NODE_ENV: "production" })).toThrow(
+      /MAILER/,
+    );
   });
 });

@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { buildApp } from "./app.js";
 import type { CatalogRepository } from "./catalog.js";
 import type { Clock } from "./clock.js";
+import type { GiftRepository } from "./gifts.js";
 import type { InvoiceRepository } from "./invoices.js";
+import type { Mailer } from "./mailer.js";
 import type {
   PaymentEvent,
   PaymentEventOutcome,
@@ -26,6 +28,8 @@ const verifier: PaymentWebhookVerifier = {
     if (sig === "valid") return succeeded;
     if (sig === "failed")
       return { id: "evt_2", type: "payment.failed", providerRef: "pi_1" };
+    if (sig === "refunded")
+      return { id: "evt_3", type: "payment.refunded", providerRef: "pi_1" };
     if (sig === "skip") return "ignored";
     return null;
   },
@@ -109,6 +113,13 @@ describe("POST /webhooks/payments", () => {
     expect((await post(app, "valid")).statusCode).toBe(200);
   });
 
+  it("passes refunds to the repository", async () => {
+    const applied: PaymentEvent[] = [];
+    const app = await make(applied);
+    await post(app, "refunded");
+    expect(applied.map((e) => e.type)).toEqual(["payment.refunded"]);
+  });
+
   it("passes failed payments to the repository", async () => {
     const applied: PaymentEvent[] = [];
     const app = await make(applied);
@@ -136,5 +147,102 @@ describe("POST /webhooks/payments", () => {
     });
     apps.push(app);
     expect((await post(app, "valid")).statusCode).toBe(500);
+  });
+});
+
+describe("gift notification after a payment", () => {
+  const notification = {
+    giftId: "gift-1",
+    code: "SECRET-GIFT-CODE",
+    recipientEmail: "friend@example.test",
+    planName: "Pro",
+    durationPeriods: 3,
+    expiresAt: new Date("2027-10-17T12:00:00Z"),
+  };
+
+  async function setup(opts: {
+    outcome?: PaymentEventOutcome;
+    notification?: typeof notification | null;
+    sendFails?: boolean;
+    withMailer?: boolean;
+  }) {
+    const sent: unknown[] = [];
+    const marked: [string, Date][] = [];
+    const lookups: string[] = [];
+    const app = await buildApp({
+      db: { ping: () => Promise.resolve() },
+      catalog: {} as CatalogRepository,
+      subscriptions: {
+        applyPaymentEvent: () => Promise.resolve(opts.outcome ?? "applied"),
+      } as unknown as SubscriptionRepository,
+      invoices: {} as InvoiceRepository,
+      gifts: {
+        findNotification: (providerRef: string) => {
+          lookups.push(providerRef);
+          return Promise.resolve(
+            opts.notification === undefined ? notification : opts.notification,
+          );
+        },
+        markNotified: (giftId: string, at: Date) => {
+          marked.push([giftId, at]);
+          return Promise.resolve();
+        },
+      } as unknown as GiftRepository,
+      ...(opts.withMailer === false
+        ? {}
+        : {
+            mailer: {
+              sendGiftEmail: (message: unknown) => {
+                sent.push(message);
+                return opts.sendFails ? Promise.reject(new Error("smtp down")) : Promise.resolve();
+              },
+            } satisfies Mailer,
+          }),
+      webhookVerifier: verifier,
+      clock,
+      logger: false,
+    });
+    const res = await app.inject({
+      method: "POST",
+      url: "/webhooks/payments",
+      payload: "{}",
+      headers: { "content-type": "application/json", "x-test-signature": "valid" },
+    });
+    await app.close();
+    return { res, sent, marked, lookups };
+  }
+
+  it("emails the recipient once the gift is paid, then marks it as notified", async () => {
+    const { res, sent, marked, lookups } = await setup({});
+    expect(res.statusCode).toBe(200);
+    expect(lookups).toEqual(["pi_1"]);
+    expect(sent).toEqual([
+      {
+        to: "friend@example.test",
+        code: "SECRET-GIFT-CODE",
+        planName: "Pro",
+        durationPeriods: 3,
+        expiresAt: notification.expiresAt,
+      },
+    ]);
+    expect(marked).toEqual([["gift-1", NOW]]);
+  });
+
+  it("does nothing when the payment is not a gift, a duplicate, or unmatched", async () => {
+    expect((await setup({ notification: null })).sent).toHaveLength(0);
+    expect((await setup({ outcome: "duplicate" })).lookups).toHaveLength(0);
+    expect((await setup({ outcome: "unmatched" })).lookups).toHaveLength(0);
+  });
+
+  it("still answers 200 and does not mark the gift when the email fails", async () => {
+    const { res, marked } = await setup({ sendFails: true });
+    expect(res.statusCode).toBe(200);
+    expect(marked).toHaveLength(0);
+  });
+
+  it("does not look gifts up without a mailer", async () => {
+    const { res, lookups } = await setup({ withMailer: false });
+    expect(res.statusCode).toBe(200);
+    expect(lookups).toHaveLength(0);
   });
 });

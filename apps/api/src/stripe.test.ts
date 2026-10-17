@@ -44,6 +44,28 @@ describe("Stripe webhook verifier", () => {
     });
   });
 
+  it("maps charge.refunded to the PaymentIntent of the charge", () => {
+    const body = JSON.stringify({
+      id: "evt_3",
+      type: "charge.refunded",
+      data: { object: { id: "ch_1", payment_intent: "pi_3" } },
+    });
+    expect(parse(body, sign(body))).toEqual({
+      id: "evt_3",
+      type: "payment.refunded",
+      providerRef: "pi_3",
+    });
+  });
+
+  it("rejects a charge.refunded event without a PaymentIntent", () => {
+    const body = JSON.stringify({
+      id: "evt_4",
+      type: "charge.refunded",
+      data: { object: { id: "ch_1", payment_intent: null } },
+    });
+    expect(parse(body, sign(body))).toBeNull();
+  });
+
   it("returns 'ignored' for a validly signed event of another type", () => {
     const body = event("customer.created");
     expect(parse(body, sign(body))).toBe("ignored");

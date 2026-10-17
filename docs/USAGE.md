@@ -89,6 +89,14 @@ git checkout -b feat/ma-fonctionnalite
   `expired` → 409. `DELETE /subscriptions/:id/cancellation` révoque une annulation programmée tant que la période n'est pas
   terminée. À l'échéance, `jobs:close-ended` passe l'abonnement en `canceled` ; les droits, eux, s'arrêtent à
   `currentPeriodEnd` même si le job n'a pas encore tourné.
+- Cadeaux : `POST /gifts` (`Idempotency-Key` obligatoire ; `{ "planPriceId", "durationPeriods": 1-12, "recipientEmail"? }`) crée un
+  cadeau `awaiting_payment` et une facture `open` au nom de l'offrant (prix × durée). Le code (128 bits, base64url) n'est **jamais**
+  renvoyé à l'achat : au paiement (webhook) le cadeau devient `pending`, valable 12 mois, et le destinataire est prévenu par
+  e-mail si `MAILER` le permet ; l'offrant retrouve le code par `GET /gifts` tant que le cadeau est utilisable (jamais celui d'un
+  autre compte). Un remboursement (`charge.refunded` Stripe, à activer dans le endpoint webhook) avant échange passe le cadeau `refunded` : son code est inutilisable.
+  Un cadeau non payé est fermé au bout de 24 h (`jobs:expire-pending`, qui expire aussi les cadeaux périmés).
+  `MAILER=console` (local, refusé en production) écrit les e-mails, **code compris**, sur la sortie standard ; par défaut
+  (`none`) aucun e-mail n'est envoyé : aucun fournisseur d'e-mail n'est branché (port `Mailer`).
 - Jobs périodiques (à planifier hors de l'API : cron, machine planifiée Fly — **pas encore planifiés**) :
   `pnpm --filter @subscription-portal/api jobs:renew` (facture les renouvellements échus ; au paiement la période
   avance et le downgrade programmé s'applique ; un échec passe l'abonnement en `past_due`) et `jobs:expire-pending`

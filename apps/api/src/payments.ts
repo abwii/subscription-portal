@@ -25,7 +25,7 @@ export interface PaymentProvider {
 export interface PaymentEvent {
   /** Identifiant unique de l'événement chez le fournisseur : clé d'idempotence du webhook. */
   id: string;
-  type: "payment.succeeded" | "payment.failed";
+  type: "payment.succeeded" | "payment.failed" | "payment.refunded";
   providerRef: string;
 }
 
@@ -79,7 +79,7 @@ export function createFakeWebhookVerifier(): PaymentWebhookVerifier {
         if (
           typeof id === "string" &&
           typeof providerRef === "string" &&
-          (type === "payment.succeeded" || type === "payment.failed")
+          (type === "payment.succeeded" || type === "payment.failed" || type === "payment.refunded")
         ) {
           return { id, type, providerRef };
         }

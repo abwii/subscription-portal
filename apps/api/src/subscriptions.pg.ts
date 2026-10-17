@@ -184,7 +184,24 @@ export function createSubscriptionRepository(
            RETURNING 1
          )`;
       const succeeded = event.type === "payment.succeeded";
-      const sql = succeeded
+      // Remboursement : le paiement passe `refunded`. Un cadeau non encore échangé est annulé (code
+      // inutilisable). Les remboursements d'abonnements ou de cadeaux déjà échangés se traitent hors ligne.
+      const refundSql = `WITH ${record}, pay AS (
+             UPDATE payments SET status = 'refunded'
+             WHERE provider_ref = $3 AND status = 'succeeded' AND EXISTS (SELECT 1 FROM ev)
+             RETURNING invoice_id
+           ), gift AS (
+             UPDATE gifts SET status = 'refunded'
+             WHERE id IN (SELECT i.gift_id FROM invoices i
+                          WHERE i.id IN (SELECT invoice_id FROM pay) AND i.gift_id IS NOT NULL)
+               AND status IN ('awaiting_payment', 'pending')
+             RETURNING id
+           )
+           SELECT (SELECT count(*) FROM ev)::int AS recorded,
+                  (SELECT count(*) FROM pay)::int AS effects`;
+      const sql = event.type === "payment.refunded"
+        ? refundSql
+        : succeeded
         ? // Un paiement `failed` peut encore réussir (le client retente avec le même PaymentIntent).
           // Trois sortes de factures :
           // - checkout (ni prix visé ni renouvellement) : pending → active, période démarrant au paiement ;
@@ -200,7 +217,7 @@ export function createSubscriptionRepository(
            ), inv AS (
              UPDATE invoices SET status = 'paid', paid_at = $4::timestamptz
              WHERE id IN (SELECT invoice_id FROM pay) AND status = 'open'
-             RETURNING subscription_id, target_plan_price_id, starts_new_period, is_renewal, is_resume
+             RETURNING subscription_id, target_plan_price_id, starts_new_period, is_renewal, is_resume, gift_id
            ), sub AS (
              UPDATE subscriptions s
              SET status = 'active',
@@ -237,9 +254,15 @@ export function createSubscriptionRepository(
                     OR (inv.target_plan_price_id IS NOT NULL AND s.status = 'active')
                     OR ((inv.is_renewal OR inv.is_resume) AND s.status IN ('active', 'past_due')))
              RETURNING s.id
+           ), gift AS (
+             -- Facture d'achat d'un cadeau : il devient utilisable, valable 12 mois.
+             UPDATE gifts SET status = 'pending', expires_at = $4::timestamptz + interval '12 months'
+             WHERE id IN (SELECT gift_id FROM inv WHERE gift_id IS NOT NULL)
+               AND status = 'awaiting_payment'
+             RETURNING id
            )
            SELECT (SELECT count(*) FROM ev)::int AS recorded,
-                  (SELECT count(*) FROM sub)::int AS effects`
+                  ((SELECT count(*) FROM sub) + (SELECT count(*) FROM gift))::int AS effects`
         : `WITH ${record}, pay AS (
              UPDATE payments SET status = 'failed'
              WHERE provider_ref = $3 AND status = 'pending' AND EXISTS (SELECT 1 FROM ev)
@@ -665,10 +688,15 @@ export function createSubscriptionRepository(
            UPDATE subscriptions SET status = 'expired'
            WHERE status = 'pending' AND created_at < $1
            RETURNING id
+         ), gf AS (
+           UPDATE gifts SET status = 'expired'
+           WHERE status = 'awaiting_payment' AND created_at < $1
+           RETURNING id
          ), inv AS (
            UPDATE invoices SET status = 'void'
            WHERE status = 'open'
              AND (subscription_id IN (SELECT id FROM sub)
+                  OR gift_id IN (SELECT id FROM gf)
                   OR (target_plan_price_id IS NOT NULL AND issued_at < $1))
            RETURNING id, target_plan_price_id
          ), pay AS (
@@ -677,6 +705,7 @@ export function createSubscriptionRepository(
            RETURNING id
          )
          SELECT ((SELECT count(*) FROM sub)
+                 + (SELECT count(*) FROM gf)
                  + (SELECT count(*) FROM inv WHERE target_plan_price_id IS NOT NULL))::int AS expired`,
         [createdBefore],
       );
