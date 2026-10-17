@@ -21,6 +21,7 @@ const PRICE_ID = "11111111-1111-4111-8111-111111111111";
 const price: PlanPriceRef = {
   id: PRICE_ID,
   planId: "plan-pro",
+  rank: 1,
   interval: "month",
   amountCents: 1999,
   currency: "EUR",
@@ -51,6 +52,9 @@ function fakeRepo(over: Partial<SubscriptionRepository> = {}) {
     },
     recordPayment: () => Promise.resolve(),
     applyPaymentEvent: () => Promise.resolve("applied"),
+    findSubscriptionForChange: () => Promise.resolve(null),
+    findChangeByIdempotencyKey: () => Promise.resolve(null),
+    createChangeInvoice: () => Promise.reject(new Error("not used")),
     expirePending: () => Promise.resolve(0),
     ...over,
   };

@@ -7,10 +7,16 @@ import type {
   PaymentEventOutcome,
   PaymentProvider,
 } from "./payments.js";
+import type {
+  ChangeRecord,
+  CreateChangeInvoiceInput,
+  SubscriptionForChange,
+} from "./plan-changes.js";
 
 export interface PlanPriceRef {
   id: string;
   planId: string;
+  rank: number;
   interval: PriceInterval;
   amountCents: number;
   currency: string;
@@ -77,7 +83,25 @@ export interface SubscriptionRepository {
    *   reste `pending` : le client peut réessayer jusqu'à l'expiration).
    */
   applyPaymentEvent(event: PaymentEvent, now: Date): Promise<PaymentEventOutcome>;
-  /** `pending` créés avant `createdBefore` → `expired`, facture `void`. Retourne leur nombre. */
+  /** Abonnement du compte avec le plan courant, pour chiffrer un changement. `null` si absent ou à un autre compte. */
+  findSubscriptionForChange(
+    accountId: string,
+    subscriptionId: string,
+  ): Promise<SubscriptionForChange | null>;
+  findChangeByIdempotencyKey(
+    accountId: string,
+    key: string,
+  ): Promise<ChangeRecord | null>;
+  /**
+   * Crée atomiquement la facture `open` de changement (prix visé, lignes de prorata).
+   * Lève `ChangeInProgressError` ou `DuplicateIdempotencyKeyError`.
+   */
+  createChangeInvoice(input: CreateChangeInvoiceInput): Promise<ChangeRecord>;
+  /**
+   * Ferme ce qui n'a pas été payé à temps : `pending` créés avant `createdBefore` → `expired`, et
+   * demandes de changement ouvertes émises avant `createdBefore`. Factures `void`. Retourne le nombre
+   * d'éléments fermés.
+   */
   expirePending(createdBefore: Date): Promise<number>;
 }
 

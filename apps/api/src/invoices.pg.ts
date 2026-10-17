@@ -47,7 +47,7 @@ export function createInvoiceRepository(db: Queryable): InvoiceRepository {
                'type', l.type, 'description', l.description,
                'amountCents', l.amount_cents,
                'periodStart', l.period_start, 'periodEnd', l.period_end)
-               ORDER BY l.id)
+               ORDER BY l.position, l.id)
              FROM invoice_lines l WHERE l.invoice_id = i.id
            ), '[]'::json) AS lines
          FROM invoices i
