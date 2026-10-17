@@ -1,7 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import type { Authenticate, PriceInterval, SubscriptionStatus } from "./catalog.js";
 import type { Clock } from "./clock.js";
-import type { PaymentDetails, PaymentProvider } from "./payments.js";
+import type {
+  PaymentDetails,
+  PaymentEvent,
+  PaymentEventOutcome,
+  PaymentProvider,
+} from "./payments.js";
 
 export interface PlanPriceRef {
   id: string;
@@ -65,24 +70,18 @@ export interface SubscriptionRepository {
     amountCents: number,
   ): Promise<void>;
   /**
-   * Paiement réussi : paiement `succeeded`, facture `paid`, abonnement `active` avec une période
-   * qui démarre à `paidAt`. `false` si rien n'est activé (inconnu, déjà traité, expiré).
+   * Enregistre l'événement (idempotence) et applique son effet, en une seule requête atomique :
+   * - `payment.succeeded` : paiement `succeeded`, facture `paid`, abonnement `pending` → `active`
+   *   avec une période qui démarre à `now` ;
+   * - `payment.failed` : paiement `failed` ; un abonnement `active` passe `past_due` (un `pending`
+   *   reste `pending` : le client peut réessayer jusqu'à l'expiration).
    */
-  activateByProviderRef(providerRef: string, paidAt: Date): Promise<boolean>;
+  applyPaymentEvent(event: PaymentEvent, now: Date): Promise<PaymentEventOutcome>;
   /** `pending` créés avant `createdBefore` → `expired`, facture `void`. Retourne leur nombre. */
   expirePending(createdBefore: Date): Promise<number>;
 }
 
 export const PENDING_TTL_MS = 24 * 60 * 60 * 1000;
-
-/** À appeler par le webhook de paiement (ticket « Factures et webhooks »). */
-export function confirmPayment(
-  repo: SubscriptionRepository,
-  clock: Clock,
-  providerRef: string,
-): Promise<boolean> {
-  return repo.activateByProviderRef(providerRef, clock.now());
-}
 
 /** À planifier (ex. toutes les 15 minutes) : ferme les checkouts non payés au bout de 24 h. */
 export function expirePendingSubscriptions(

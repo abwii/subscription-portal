@@ -6,7 +6,9 @@ import {
   type CatalogRepository,
 } from "./catalog.js";
 import { systemClock, type Clock } from "./clock.js";
-import type { PaymentProvider } from "./payments.js";
+import { registerInvoiceRoutes, type InvoiceRepository } from "./invoices.js";
+import { registerWebhookRoutes } from "./webhooks.js";
+import type { PaymentProvider, PaymentWebhookVerifier } from "./payments.js";
 import {
   registerSubscriptionRoutes,
   type SubscriptionRepository,
@@ -21,8 +23,11 @@ export interface AppOptions {
   db: Database;
   catalog: CatalogRepository;
   subscriptions: SubscriptionRepository;
+  invoices: InvoiceRepository;
   /** Absent : le checkout répond 503. */
   payments?: PaymentProvider;
+  /** Absent : le webhook de paiement répond 503. */
+  webhookVerifier?: PaymentWebhookVerifier;
   clock?: Clock;
   /** Retourne l'id du compte authentifié, ou `null`. Refus par défaut. */
   authenticate?: Authenticate;
@@ -37,7 +42,9 @@ export async function buildApp({
   db,
   catalog,
   subscriptions,
+  invoices,
   payments,
+  webhookVerifier,
   clock = systemClock,
   authenticate = () => Promise.resolve(null),
   rateLimit: limits = { max: 100, timeWindowMs: 60_000 },
@@ -67,6 +74,8 @@ export async function buildApp({
 
   registerCatalogRoutes(app, { catalog, clock, authenticate });
   registerSubscriptionRoutes(app, { subscriptions, payments, clock, authenticate });
+  registerInvoiceRoutes(app, { invoices, authenticate });
+  registerWebhookRoutes(app, { subscriptions, verifier: webhookVerifier, clock });
 
   return app;
 }

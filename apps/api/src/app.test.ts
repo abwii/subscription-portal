@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { buildApp, type Database } from "./app.js";
 import type { CatalogRepository } from "./catalog.js";
+import type { InvoiceRepository } from "./invoices.js";
 import type { SubscriptionRepository } from "./subscriptions.js";
 
 const noCatalog = {} as CatalogRepository;
 const noSubs = {} as SubscriptionRepository;
+const noInvoices = {} as InvoiceRepository;
 const healthyDb: Database = { ping: () => Promise.resolve() };
 const brokenDb: Database = {
   ping: () => Promise.reject(new Error("connection refused")),
@@ -13,7 +15,7 @@ const brokenDb: Database = {
 describe("api", () => {
   const apps: Awaited<ReturnType<typeof buildApp>>[] = [];
   const make = async (db: Database) => {
-    const app = await buildApp({ db, catalog: noCatalog, subscriptions: noSubs, logger: false });
+    const app = await buildApp({ db, catalog: noCatalog, subscriptions: noSubs, invoices: noInvoices, logger: false });
     apps.push(app);
     return app;
   };
@@ -33,6 +35,7 @@ describe("api", () => {
       db: healthyDb,
       catalog: { listPlans: () => Promise.resolve([]) } as unknown as CatalogRepository,
       subscriptions: noSubs,
+      invoices: noInvoices,
       rateLimit: { max: 2, timeWindowMs: 60_000 },
       logger: false,
     });

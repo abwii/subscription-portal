@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { buildApp } from "./app.js";
 import type { CatalogRepository } from "./catalog.js";
 import type { Clock } from "./clock.js";
+import type { InvoiceRepository } from "./invoices.js";
 import type { PaymentProvider } from "./payments.js";
 import {
-  confirmPayment,
   DuplicateIdempotencyKeyError,
   expirePendingSubscriptions,
   LiveSubscriptionExistsError,
@@ -50,7 +50,7 @@ function fakeRepo(over: Partial<SubscriptionRepository> = {}) {
       return Promise.resolve(record);
     },
     recordPayment: () => Promise.resolve(),
-    activateByProviderRef: () => Promise.resolve(true),
+    applyPaymentEvent: () => Promise.resolve("applied"),
     expirePending: () => Promise.resolve(0),
     ...over,
   };
@@ -82,6 +82,7 @@ describe("POST /subscriptions", () => {
       db: { ping: () => Promise.resolve() },
       catalog: {} as CatalogRepository,
       subscriptions: opts.repo ?? fakeRepo().repo,
+      invoices: {} as InvoiceRepository,
       ...(opts.payments ? { payments: opts.payments } : {}),
       clock,
       authenticate: () =>
@@ -264,21 +265,6 @@ describe("POST /subscriptions", () => {
     expect(res.statusCode).toBe(502);
     expect(res.body).not.toContain("boom");
     expect(created).toHaveLength(1);
-  });
-});
-
-describe("confirmPayment", () => {
-  it("activates the subscription with the payment date and reports the outcome", async () => {
-    const seen: [string, Date][] = [];
-    const { repo } = fakeRepo({
-      activateByProviderRef: (ref, paidAt) => {
-        seen.push([ref, paidAt]);
-        return Promise.resolve(ref === "pi_ok");
-      },
-    });
-    expect(await confirmPayment(repo, clock, "pi_ok")).toBe(true);
-    expect(await confirmPayment(repo, clock, "pi_unknown")).toBe(false);
-    expect(seen[0]).toEqual(["pi_ok", NOW]);
   });
 });
 
